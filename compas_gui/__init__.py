@@ -1,0 +1,1 @@
+"""COMPAS GUI (PySide6)."""

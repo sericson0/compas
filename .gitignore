@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+scratch_results.csv
+final_results.csv
+*.egg-info/
+build/
+dist/
