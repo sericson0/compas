@@ -6,7 +6,8 @@ CLI, and tag writer need.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+import math
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -14,14 +15,14 @@ import numpy as np
 from compas_core.audio import load_audio
 from compas_core.energy import analyze_energy
 from compas_core.key import analyze_key
-from compas_core.rhythm import (
-    RHYTHM_SPECS,
-    Rhythm,
-    fold_bpm_into_range,
-    rhythm_from_genre,
-)
+from compas_core.loudness import analyze_loudness
+from compas_core.rhythm import RHYTHM_SPECS, Rhythm, rhythm_from_genre
 from compas_core.tags import FileTags, read_tags
 from compas_core.tempo import HOP, analyze_tempo
+
+# Below this margin between the best and runner-up rhythm hypothesis, the
+# audio-only guess is not trustworthy enough to act on silently.
+RHYTHM_CONFIDENCE_FLOOR = 0.15
 
 
 @dataclass
@@ -35,6 +36,7 @@ class TrackAnalysis:
 
     rhythm: str                # tango / vals / milonga
     rhythm_source: str         # override / genre-tag / audio / default
+    rhythm_confidence: float   # 0-1; only meaningful when source == "audio"
     time_signature: str        # 4/4, 3/4, 2/4
 
     bpm: float                 # median beat-level BPM
@@ -48,15 +50,20 @@ class TrackAnalysis:
     key: str
     camelot: str
     key_confidence: float
-    tag_bpm: str | None        # pre-existing BPM tag (MIK/Serato/…), if any
+    tag_bpm: str | None        # pre-existing BPM tag (MIK/Serato/...), if any
     tag_key: str | None        # pre-existing initial-key tag, if any
 
     energy: float              # 1-10
-    drive: float               # 0-100
-    dynamic_range_db: float
+    drive: float               # 0-100, band-limited beat articulation
+    syncopation: float         # 0-100, weight falling between beats
+    lufs: float | None         # EBU R128 integrated loudness
+    lra: float | None          # EBU R128 loudness range, LU
+    sample_peak_db: float
+    dynamic_range_db: float    # legacy RMS spread; LRA supersedes it
     onset_density: float
-    raw_beat_contrast: float   # calibration aids
-    raw_percussive_ratio: float
+    raw_drive_low: float       # calibration aids
+    raw_drive_mid: float
+    raw_syncopation: float
     raw_loudness_var: float
 
     def to_dict(self) -> dict:
@@ -64,77 +71,145 @@ class TrackAnalysis:
 
     def tag_fields(self, *, key_as_camelot: bool = False) -> dict[str, str]:
         """Canonical tag fields for compas_core.tags.write_tags."""
-        return {
+        fields = {
             "BPM": f"{self.bpm:.1f}",
             "INITIALKEY": self.camelot if key_as_camelot else self.key,
             "COMPAS_RHYTHM": self.rhythm,
             "COMPAS_ENERGY": f"{self.energy:.1f}",
             "COMPAS_DRIVE": f"{self.drive:.0f}",
+            "COMPAS_SYNCOPATION": f"{self.syncopation:.0f}",
             "COMPAS_STABILITY": f"{self.stability:.0f}",
             "COMPAS_TIMING": self.timing,
             "COMPAS_BPM_RANGE": f"{self.bpm_low:.0f}-{self.bpm_high:.0f}",
             "COMPAS_BARS_PER_MIN": f"{self.bars_per_min:.1f}",
             "COMPAS_DYNAMIC_RANGE_DB": f"{self.dynamic_range_db:.1f}",
         }
+        if self.lufs is not None:
+            fields["COMPAS_LUFS"] = f"{self.lufs:.1f}"
+        if self.lra is not None:
+            fields["COMPAS_LRA"] = f"{self.lra:.1f}"
+        return fields
 
 
-def _detect_rhythm_from_audio(oenv: np.ndarray, sr: int) -> Rhythm:
-    """Meter/tempo heuristic when no usable GENRE tag exists.
+# --- rhythm detection from audio -----------------------------------------
+#
+# Each rhythm is treated as a hypothesis and tested on its own terms:
+# beats are tracked *inside that rhythm's tempo range*, then the sequence
+# of beat accent strengths is autocorrelated in the BEAT domain.
+#
+# The beat domain is the important part. In the lag domain, autocorrelation
+# is high at every integer multiple of the beat period simply because the
+# beat repeats, so "support at 3 beats" does not distinguish 3/4 from 4/4 --
+# an earlier attempt scoring lag-domain multiples scored no better than the
+# heuristic it replaced. Once the signal is sampled at beat positions,
+# lag 3 versus lag 2/4 measures grouping directly.
+#
+# Tango and milonga are both duple and are not separable this way; the
+# tempo prior distinguishes them, which is what it is good at.
+#
+# Step 1, ternary vs duple: at the candidate vals beat lag L, compare the
+# autocorrelation at 3L against the midpoint of 2L and 4L. In 3/4 the bar
+# falls on 3L, so it sits ABOVE its neighbours; in duple meter 3L is not a
+# bar multiple and dips below. Taking the excess over neighbours is what
+# makes this work -- raw support at 3L is high in every meter, because any
+# integer multiple of the beat period correlates well.
+#
+# On the example corpus this separates cleanly: all four valses land
+# positive (+0.006 to +0.047), all twelve tangos negative (-0.010 to
+# -0.192), milongas negative except Silueta at +0.0035.
+#
+# Step 2, tango vs milonga: both are duple and produce identical grouping
+# evidence, so only tempo separates them. One tempo pass with a wide duple
+# probe, then compare against each genre's typical tempo.
+#
+_TERNARY_THRESHOLD = 0.005
+_TEMPO_PRIOR = 0.35
 
-    Triple vs duple meter from the autocorrelation of beat-level accents;
-    duple is then split tango vs milonga by which genre's tempo range the
-    (folded) tactus fits with less distortion.
+
+def _best_tempo_in_range(acf: np.ndarray, frame_rate: float, spec) -> float:
+    """Strongest beat tempo inside this rhythm's range, harmonically reinforced."""
+    best_val, best_bpm = -1e9, spec.bpm_typical
+    for bpm in np.arange(spec.bpm_min, spec.bpm_max + 0.5, 0.5):
+        lag = 60.0 * frame_rate / bpm
+        total = 0.0
+        for mult, weight in spec.harmonics:
+            i = int(round(lag * mult))
+            if 0 <= i < len(acf):
+                total += weight * float(acf[i])
+        if total > best_val:
+            best_val, best_bpm = total, float(bpm)
+    return best_bpm
+
+
+def _ternary_excess(acf: np.ndarray, lag: float) -> float:
+    """Autocorrelation at 3x the beat lag, relative to 2x and 4x."""
+    def at(x: float) -> float:
+        i = int(round(x))
+        return float(acf[i]) if 0 <= i < len(acf) else 0.0
+
+    return at(3 * lag) - 0.5 * (at(2 * lag) + at(4 * lag))
+
+
+def detect_rhythm_from_audio(
+    y: np.ndarray, sr: int, oenv: np.ndarray
+) -> tuple[Rhythm, float]:
+    """Rhythm from audio alone, with a 0-1 confidence.
+
+    Replaces a heuristic that estimated one unconstrained tempo and then
+    looked for a 3-beat accent period. That scored 74% and misread 3 of 4
+    valses as milonga: the free tempo estimate landed an octave below the
+    vals tactus, destroying the very periodicity it was testing for, after
+    which a tempo-range comparison always favoured milonga.
     """
     import librosa
 
-    tempo_free = float(
-        librosa.feature.tempo(onset_envelope=oenv, sr=sr, hop_length=HOP,
-                              start_bpm=120.0, std_bpm=1.5, max_tempo=320.0)[0]
-    )
-    _, beats = librosa.beat.beat_track(
-        onset_envelope=oenv, sr=sr, hop_length=HOP,
-        bpm=tempo_free, tightness=80, units="frames",
-    )
-    if len(beats) >= 16:
-        accents = oenv[beats].astype(float)
-        accents -= accents.mean()
-        denom = float(np.sum(accents**2)) or 1e-9
+    from compas_core.rhythm import DUPLE_PROBE
+    from compas_core.tempo import analyze_tempo
 
-        def acf(lag: int) -> float:
-            return float(np.sum(accents[:-lag] * accents[lag:])) / denom
+    frame_rate = sr / HOP
+    acf = librosa.feature.tempogram(
+        onset_envelope=oenv, sr=sr, hop_length=HOP).mean(axis=1)
 
-        # Strong 3-beat accent periodicity that beats 2- and 4-beat -> vals
-        if acf(3) > max(acf(2), acf(4)) + 0.03:
-            return Rhythm.VALS
+    # --- step 1: ternary test at the vals-range lag -----------------------
+    vals_spec = RHYTHM_SPECS[Rhythm.VALS]
+    vals_bpm = _best_tempo_in_range(acf, frame_rate, vals_spec)
+    excess = _ternary_excess(acf, 60.0 * frame_rate / vals_bpm)
+    if excess > _TERNARY_THRESHOLD:
+        # Scale the margin so a comfortable positive reads as confident.
+        return Rhythm.VALS, round(float(np.clip(excess / 0.03, 0.0, 1.0)), 3)
 
-    # Duple: pick tango vs milonga by tempo-range fit
-    import math
-    costs = {}
-    for r in (Rhythm.TANGO, Rhythm.MILONGA):
-        spec = RHYTHM_SPECS[r]
-        folded = fold_bpm_into_range(tempo_free, spec)
-        cost = abs(math.log(folded / spec.bpm_typical))
-        if not (spec.bpm_min <= folded <= spec.bpm_max):
-            cost += 10
-        costs[r] = cost
-    return min(costs, key=costs.get)
+    # --- step 2: duple, so tango vs milonga on tempo ----------------------
+    bpm = analyze_tempo(y, sr, DUPLE_PROBE, onset_env=oenv).bpm
+    cost_tango = abs(math.log(bpm / RHYTHM_SPECS[Rhythm.TANGO].bpm_typical))
+    cost_milonga = abs(math.log(bpm / RHYTHM_SPECS[Rhythm.MILONGA].bpm_typical))
+    if cost_tango <= cost_milonga:
+        rhythm, margin = Rhythm.TANGO, cost_milonga - cost_tango
+    else:
+        rhythm, margin = Rhythm.MILONGA, cost_tango - cost_milonga
+    # A duple call is also less certain the closer the ternary test ran to
+    # its threshold, so fold that in.
+    ternary_margin = float(np.clip((_TERNARY_THRESHOLD - excess) / 0.02, 0.0, 1.0))
+    confidence = float(np.clip(margin / 0.13, 0.0, 1.0)) * ternary_margin
+    return rhythm, round(confidence, 3)
 
 
 def resolve_rhythm(
     tags: FileTags,
+    y: np.ndarray | None,
     oenv: np.ndarray | None,
     sr: int,
     override: str | Rhythm | None = None,
-) -> tuple[Rhythm, str]:
+) -> tuple[Rhythm, str, float]:
     """Resolution order: explicit override > GENRE tag > audio heuristic."""
     if override and str(override) != "auto":
-        return Rhythm(str(override)), "override"
+        return Rhythm(str(override)), "override", 1.0
     tagged = rhythm_from_genre(tags.genre)
     if tagged is not None:
-        return tagged, "genre-tag"
-    if oenv is not None:
-        return _detect_rhythm_from_audio(oenv, sr), "audio"
-    return Rhythm.TANGO, "default"
+        return tagged, "genre-tag", 1.0
+    if y is not None and oenv is not None:
+        rhythm, conf = detect_rhythm_from_audio(y, sr, oenv)
+        return rhythm, "audio", conf
+    return Rhythm.TANGO, "default", 0.0
 
 
 def analyze_file(
@@ -150,7 +225,8 @@ def analyze_file(
     duration = len(y) / sr
 
     oenv = librosa.onset.onset_strength(y=y, sr=sr, hop_length=HOP)
-    resolved, source = resolve_rhythm(tags, oenv, sr, override=rhythm)
+    resolved, source, confidence = resolve_rhythm(
+        tags, y, oenv, sr, override=rhythm)
     spec = RHYTHM_SPECS[resolved]
 
     tempo = analyze_tempo(y, sr, spec, onset_env=oenv)
@@ -158,6 +234,7 @@ def analyze_file(
     y_harm, y_perc = librosa.effects.hpss(y)
     key = analyze_key(y_harm, sr)
     energy = analyze_energy(y, y_perc, sr, tempo, spec)
+    loud = analyze_loudness(y, sr)
 
     return TrackAnalysis(
         path=str(path),
@@ -168,6 +245,7 @@ def analyze_file(
         duration_sec=round(duration, 1),
         rhythm=resolved.value,
         rhythm_source=source,
+        rhythm_confidence=confidence,
         time_signature=f"{spec.beats_per_bar}/4",
         bpm=tempo.bpm,
         bpm_low=tempo.bpm_low,
@@ -183,9 +261,14 @@ def analyze_file(
         tag_key=tags.existing_key,
         energy=energy.energy,
         drive=energy.drive,
+        syncopation=energy.syncopation,
+        lufs=loud.lufs,
+        lra=loud.lra,
+        sample_peak_db=loud.sample_peak_db,
         dynamic_range_db=energy.dynamic_range_db,
         onset_density=energy.onset_density,
-        raw_beat_contrast=energy.raw_beat_contrast,
-        raw_percussive_ratio=energy.raw_percussive_ratio,
+        raw_drive_low=energy.raw_drive_low,
+        raw_drive_mid=energy.raw_drive_mid,
+        raw_syncopation=energy.raw_syncopation,
         raw_loudness_var=energy.raw_loudness_var,
     )

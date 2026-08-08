@@ -53,16 +53,29 @@ RHYTHM_SPECS: dict[Rhythm, RhythmSpec] = {
                              bpm_min=100.0, bpm_max=145.0, bpm_typical=122.0,
                              track_unit_beats=1,
                              harmonics=((1, 1.0), (2, 0.6), (4, 0.3))),
+    # bpm_typical was originally guessed at 178, which is a ballroom-waltz
+    # figure. Every vals in the example corpus tracks at 202-215, and that
+    # mis-set prior was large enough to lose the rhythm auto-detection vote
+    # outright. Golden-age valses are fast.
     Rhythm.VALS: RhythmSpec(Rhythm.VALS, beats_per_bar=3,
-                            bpm_min=150.0, bpm_max=215.0, bpm_typical=178.0,
+                            bpm_min=155.0, bpm_max=235.0, bpm_typical=205.0,
                             track_unit_beats=3,
                             harmonics=((1, 1.0), (2, 0.5)),
                             fixed_threshold=50.0),
     Rhythm.MILONGA: RhythmSpec(Rhythm.MILONGA, beats_per_bar=2,
-                               bpm_min=85.0, bpm_max=135.0, bpm_typical=104.0,
+                               bpm_min=85.0, bpm_max=135.0, bpm_typical=107.0,
                                track_unit_beats=1,
                                harmonics=((1, 1.0), (2, 0.6))),
 }
+
+# Not a rhythm the user can pick: a wide duple probe used only by the audio
+# auto-detector, to get one trustworthy tempo before deciding tango vs
+# milonga. Both real duple specs clip the range in ways that bias that
+# decision, so the probe deliberately spans both.
+DUPLE_PROBE = RhythmSpec(Rhythm.TANGO, beats_per_bar=4,
+                         bpm_min=88.0, bpm_max=148.0, bpm_typical=118.0,
+                         track_unit_beats=1,
+                         harmonics=((1, 1.0), (2, 0.6), (4, 0.3)))
 
 # Substrings (lowercased) mapped to rhythms for GENRE-tag auto-detection.
 _GENRE_MAP = [

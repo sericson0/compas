@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 
-from compas_core.analyze import TrackAnalysis
+from compas_core.analyze import RHYTHM_CONFIDENCE_FLOOR, TrackAnalysis
 
 _SRC_ABBR = {"override": "set", "genre-tag": "tag", "audio": "audio", "default": "dflt"}
 
@@ -34,13 +34,29 @@ def _a(row: TrackRow, attr: str, fmt: str = "{}"):
     return fmt.format(getattr(row.analysis, attr))
 
 
+def _opt(row: TrackRow, attr: str, fmt: str = "{}"):
+    """Like _a, but renders None as an em dash rather than 'None'."""
+    if row.analysis is None:
+        return ""
+    val = getattr(row.analysis, attr)
+    return "—" if val is None else fmt.format(val)
+
+
+def _rhythm_label(row: TrackRow) -> str:
+    """e.g. 'tango (tag)', or 'vals (audio?)' when the guess is shaky."""
+    a = row.analysis
+    if a is None:
+        return "" if row.rhythm_override == "auto" else row.rhythm_override
+    src = _SRC_ABBR.get(a.rhythm_source, "?")
+    if a.rhythm_source == "audio" and a.rhythm_confidence < RHYTHM_CONFIDENCE_FLOOR:
+        src += "?"
+    return f"{a.rhythm} ({src})"
+
+
 # (header, display_fn, sort_fn)
 COLUMNS = [
     ("File", lambda r: r.path.name, lambda r: r.path.name.lower()),
-    ("Rhythm",
-     lambda r: (f"{r.analysis.rhythm} ({_SRC_ABBR.get(r.analysis.rhythm_source, '?')})"
-                if r.analysis else
-                ("" if r.rhythm_override == "auto" else r.rhythm_override)),
+    ("Rhythm", lambda r: _rhythm_label(r),
      lambda r: r.analysis.rhythm if r.analysis else ""),
     ("BPM", lambda r: _a(r, "bpm", "{:.1f}"),
      lambda r: r.analysis.bpm if r.analysis else -1),
@@ -65,13 +81,19 @@ COLUMNS = [
      lambda r: r.analysis.energy if r.analysis else -1),
     ("Drive", lambda r: _a(r, "drive", "{:.0f}"),
      lambda r: r.analysis.drive if r.analysis else -1),
-    ("Dyn (dB)", lambda r: _a(r, "dynamic_range_db", "{:.1f}"),
-     lambda r: r.analysis.dynamic_range_db if r.analysis else -1),
+    ("Sync", lambda r: _a(r, "syncopation", "{:.0f}"),
+     lambda r: r.analysis.syncopation if r.analysis else -1),
+    ("LUFS", lambda r: _opt(r, "lufs", "{:.1f}"),
+     lambda r: (r.analysis.lufs if r.analysis and r.analysis.lufs is not None
+                else -999)),
+    ("LRA (LU)", lambda r: _opt(r, "lra", "{:.1f}"),
+     lambda r: (r.analysis.lra if r.analysis and r.analysis.lra is not None
+                else -1)),
     ("Status", lambda r: r.error if r.status == "error" else r.status,
      lambda r: r.status),
 ]
 
-_NUMERIC_COLS = {2, 3, 4, 5, 10, 11, 12}
+_NUMERIC_COLS = {2, 3, 4, 5, 10, 11, 12, 13, 14}
 
 
 class TrackTableModel(QAbstractTableModel):
@@ -104,8 +126,16 @@ class TrackTableModel(QAbstractTableModel):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.BackgroundRole and row.analysis is not None:
             return _RHYTHM_COLORS.get(row.analysis.rhythm)
-        if role == Qt.ToolTipRole and row.status == "error":
-            return row.error
+        if role == Qt.ToolTipRole:
+            if row.status == "error":
+                return row.error
+            a = row.analysis
+            if col == 1 and a is not None and a.rhythm_source == "audio":
+                note = ("Low confidence — no GENRE tag, so this was guessed "
+                        "from the audio. Worth setting by hand."
+                        if a.rhythm_confidence < RHYTHM_CONFIDENCE_FLOOR
+                        else "Guessed from audio (no GENRE tag).")
+                return f"{note}\nConfidence {a.rhythm_confidence:.2f}"
         return None
 
     # --- mutation helpers ---------------------------------------------------

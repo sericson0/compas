@@ -6,3 +6,4 @@ final_results.csv
 *.egg-info/
 build/
 dist/
+example_songs/*

@@ -49,6 +49,7 @@ def main() -> int:
     args = ap.parse_args()
 
     from compas_core import analyze_file
+    from compas_core.analyze import RHYTHM_CONFIDENCE_FLOOR
     from compas_core.tags import write_tags
 
     files = collect_files(args.paths)
@@ -57,9 +58,9 @@ def main() -> int:
         return 1
 
     results = []
-    hdr = (f"{'file':<44} {'rhythm':<8} {'src':<10} {'bpm':>6} {'range':>9} "
+    hdr = (f"{'file':<44} {'rhythm':<8} {'src':<9} {'bpm':>6} {'range':>9} "
            f"{'bars/m':>6} {'stab':>5} {'time':<8} {'key':>4} {'cam':>3} "
-           f"{'enrg':>4} {'drv':>4} {'dyn':>5}")
+           f"{'enrg':>4} {'drv':>4} {'sync':>4} {'LUFS':>6} {'LRA':>5}")
     print(hdr)
     print("-" * len(hdr))
 
@@ -71,12 +72,17 @@ def main() -> int:
             traceback.print_exc()
             continue
         results.append(r)
+        src = r.rhythm_source
+        if src == "audio" and r.rhythm_confidence < RHYTHM_CONFIDENCE_FLOOR:
+            src += "?"
+        lufs = f"{r.lufs:.1f}" if r.lufs is not None else "-"
+        lra = f"{r.lra:.1f}" if r.lra is not None else "-"
         print(
-            f"{r.filename[:44]:<44} {r.rhythm:<8} {r.rhythm_source:<10} "
+            f"{r.filename[:44]:<44} {r.rhythm:<8} {src:<9} "
             f"{r.bpm:>6.1f} {f'{r.bpm_low:.0f}-{r.bpm_high:.0f}':>9} "
             f"{r.bars_per_min:>6.1f} {r.stability:>5.0f} {r.timing:<8} "
             f"{r.key:>4} {r.camelot:>3} {r.energy:>4.1f} {r.drive:>4.0f} "
-            f"{r.dynamic_range_db:>5.1f}"
+            f"{r.syncopation:>4.0f} {lufs:>6} {lra:>5}"
         )
         if args.write_tags:
             write_tags(r.path, r.tag_fields(
