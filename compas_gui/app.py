@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSortFilterProxyModel, Qt, QThreadPool
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -25,12 +25,15 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressDialog,
+    QPushButton,
     QTableView,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
 )
 
-from compas_gui.model import TrackRow, TrackTableModel
+from compas_gui import theme
+from compas_gui.model import COLUMNS, TrackRow, TrackTableModel
 from compas_gui.workers import (
     AnalyzeTask,
     LibrosaWarmup,
@@ -40,6 +43,22 @@ from compas_gui.workers import (
 
 AUDIO_EXTS = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".wma"}
 RHYTHM_CHOICES = ["auto", "tango", "vals", "milonga"]
+
+# Columns that can never be hidden via the Columns menu.
+ALWAYS_VISIBLE_COLUMNS = {"File", "Status"}
+
+
+class StayOpenMenu(QMenu):
+    """A menu that stays open when a checkable item is toggled, so users
+    can tick several columns without reopening it each time."""
+
+    def mouseReleaseEvent(self, event) -> None:
+        action = self.activeAction()
+        if action is not None and action.isCheckable() and action.isEnabled():
+            action.trigger()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
 
 def collect_audio_files(paths: list[Path]) -> list[Path]:
@@ -120,6 +139,8 @@ class MainWindow(QMainWindow):
 
         self.table = QTableView()
         self.table.setModel(self.proxy)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setSelectionMode(QTableView.ExtendedSelection)
@@ -141,6 +162,7 @@ class MainWindow(QMainWindow):
         self._pending = 0
 
         self._build_toolbar()
+        self._apply_column_visibility()
         self.statusBar().showMessage(
             "Add files or drop them anywhere in the window, then press Analyze.")
 
@@ -168,9 +190,14 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.rhythm_combo)
         tb.addSeparator()
 
-        self.act_analyze = QAction("Analyze", self)
-        self.act_analyze.triggered.connect(self._analyze_pending)
-        tb.addAction(self.act_analyze)
+        self.btn_analyze = QPushButton("▶  Analyze")
+        self.btn_analyze.setObjectName("AnalyzeButton")
+        self.btn_analyze.setCursor(Qt.PointingHandCursor)
+        self.btn_analyze.setToolTip(
+            "Analyze all pending files (Ctrl+Return)")
+        self.btn_analyze.setShortcut(QKeySequence("Ctrl+Return"))
+        self.btn_analyze.clicked.connect(self._analyze_pending)
+        tb.addWidget(self.btn_analyze)
 
         tb.addSeparator()
         act_tags = QAction("Write tags…", self)
@@ -186,9 +213,55 @@ class MainWindow(QMainWindow):
         tb.addAction(act_json)
 
         tb.addSeparator()
+        btn_columns = QToolButton()
+        btn_columns.setText("Columns ▾")
+        btn_columns.setToolTip("Choose which metrics are shown in the table.")
+        btn_columns.setPopupMode(QToolButton.InstantPopup)
+        btn_columns.setMenu(self._build_columns_menu())
+        tb.addWidget(btn_columns)
+
+        tb.addSeparator()
         act_clear = QAction("Clear", self)
         act_clear.triggered.connect(self._clear)
         tb.addAction(act_clear)
+
+    # --- column visibility ------------------------------------------------
+    def _hidden_columns(self) -> set[str]:
+        try:
+            hidden = set(json.loads(
+                self.settings.value("columns/hidden", "[]", str)))
+        except (TypeError, ValueError):
+            hidden = set()
+        return hidden - ALWAYS_VISIBLE_COLUMNS
+
+    def _build_columns_menu(self) -> QMenu:
+        menu = StayOpenMenu(self)
+        hidden = self._hidden_columns()
+        for col, (header, _disp, _sort) in enumerate(COLUMNS):
+            if header in ALWAYS_VISIBLE_COLUMNS:
+                continue
+            act = QAction(header, menu)
+            act.setCheckable(True)
+            act.setChecked(header not in hidden)
+            act.toggled.connect(
+                lambda shown, c=col, h=header: self._set_column_shown(
+                    c, h, shown))
+            menu.addAction(act)
+        return menu
+
+    def _set_column_shown(self, col: int, header: str, shown: bool) -> None:
+        self.table.setColumnHidden(col, not shown)
+        hidden = self._hidden_columns()
+        if shown:
+            hidden.discard(header)
+        else:
+            hidden.add(header)
+        self.settings.setValue("columns/hidden", json.dumps(sorted(hidden)))
+
+    def _apply_column_visibility(self) -> None:
+        hidden = self._hidden_columns()
+        for col, (header, _disp, _sort) in enumerate(COLUMNS):
+            self.table.setColumnHidden(col, header in hidden)
 
     # --- adding files ----------------------------------------------------
     def dragEnterEvent(self, event) -> None:
@@ -400,8 +473,10 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("COMPAS")
     app.setOrganizationName("compas")
+    theme.apply_theme(app)
     win = MainWindow()
     win.show()
+    theme.apply_dark_title_bar(win)
     return app.exec()
 
 

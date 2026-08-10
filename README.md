@@ -135,13 +135,31 @@ C:\Users\seric\.venvs\compas\Scripts\python -m compas_gui
 ```
 
 - Drag files or folders anywhere into the window (or use *Add files / Add folder*).
-- Pick a rhythm mode (or leave `auto`) and press **Analyze**.
+- Pick a rhythm mode (or leave `auto`) and press **Analyze** (or Ctrl+Enter).
+- **Columns ▾** lets you check/uncheck which metrics are shown; the choice is
+  remembered between sessions.
 - Right-click selected rows to re-analyze them as a specific rhythm or remove them.
 - **Write tags…** writes results into the files (only on request, never automatically):
   - `BPM` and `INITIALKEY` — the standard fields VirtualDJ imports from tags,
   - `COMPAS_*` fields — energy, drive, stability, timing, BPM range, bars/min,
   - optional `COMPAS Energy N` note **appended** to the comment (existing comment text is preserved).
 - **Export CSV / JSON** for the whole session.
+
+### Standalone executables (no Python needed)
+
+```
+packaging\build_windows.bat        → dist\COMPAS\COMPAS.exe   (run on Windows)
+bash packaging/build_macos.sh      → dist/COMPAS.app          (run on a Mac)
+```
+
+Both use the shared PyInstaller spec `packaging/compas.spec`. The output is a
+folder (`dist\COMPAS\`) — ship the whole folder (zip it); the exe inside won't
+run alone. A Mac app cannot be cross-built from Windows; either run the script
+on a Mac, or push the repo to GitHub and run the **Build executables** workflow
+(`.github/workflows/build.yml`), which builds Windows + macOS (Apple Silicon
+and Intel) and uploads them as downloadable artifacts. Unsigned macOS apps
+need right-click → Open on first launch (or
+`xattr -dr com.apple.quarantine COMPAS.app`).
 
 ### VirtualDJ integration (works today, no plugin needed)
 

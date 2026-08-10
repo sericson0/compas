@@ -12,10 +12,18 @@ from compas_core.analyze import RHYTHM_CONFIDENCE_FLOOR, TrackAnalysis
 
 _SRC_ABBR = {"override": "set", "genre-tag": "tag", "audio": "audio", "default": "dflt"}
 
+# Translucent tints over the dark table background.
 _RHYTHM_COLORS = {
-    "tango": QColor(66, 133, 244, 28),
-    "vals": QColor(52, 168, 83, 28),
-    "milonga": QColor(244, 180, 0, 32),
+    "tango": QColor(66, 133, 244, 40),
+    "vals": QColor(52, 168, 83, 40),
+    "milonga": QColor(244, 180, 0, 36),
+}
+
+_STATUS_COLORS = {
+    "queued": QColor(0x5a, 0x5e, 0x70),
+    "analyzing": QColor(0xF3, 0xA1, 0x0F),
+    "done": QColor(0x4C, 0xAF, 0x50),
+    "error": QColor(0xF4, 0x43, 0x36),
 }
 
 
@@ -126,6 +134,8 @@ class TrackTableModel(QAbstractTableModel):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.BackgroundRole and row.analysis is not None:
             return _RHYTHM_COLORS.get(row.analysis.rhythm)
+        if role == Qt.ForegroundRole and col == len(COLUMNS) - 1:
+            return _STATUS_COLORS.get(row.status)
         if role == Qt.ToolTipRole:
             if row.status == "error":
                 return row.error

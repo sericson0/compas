@@ -1,0 +1,45 @@
+name: Build executables
+
+# Builds the Windows .exe and the macOS .app with PyInstaller.
+# Runs on manual trigger (Actions tab -> "Build executables" -> Run workflow)
+# and on version tags (v*). Download the results from the run's Artifacts.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: COMPAS-windows
+            bundle: dist/COMPAS
+          - os: macos-latest        # Apple Silicon
+            artifact: COMPAS-macos
+            bundle: dist/COMPAS.app
+          - os: macos-15-intel      # Intel Macs
+            artifact: COMPAS-macos-intel
+            bundle: dist/COMPAS.app
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+
+      - name: Build
+        run: python -m PyInstaller packaging/compas.spec --noconfirm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundle }}
