@@ -16,19 +16,22 @@ class WorkerSignals(QObject):
 
 class AnalyzeTask(QRunnable):
     def __init__(self, generation: int, row: int, path: Path,
-                 rhythm: str, signals: WorkerSignals) -> None:
+                 rhythm: str, signals: WorkerSignals,
+                 fast: bool = False) -> None:
         super().__init__()
         self.generation = generation
         self.row = row
         self.path = path
         self.rhythm = rhythm
+        self.fast = fast
         self.signals = signals
 
     def run(self) -> None:  # executes on a pool thread
         self.signals.started.emit(self.generation, self.row)
         try:
             from compas_core import analyze_file
-            result = analyze_file(self.path, rhythm=self.rhythm)
+            result = analyze_file(self.path, rhythm=self.rhythm,
+                                  fast=self.fast)
         except Exception as exc:  # noqa: BLE001 — report to UI
             self.signals.failed.emit(
                 self.generation, self.row, f"{type(exc).__name__}: {exc}")

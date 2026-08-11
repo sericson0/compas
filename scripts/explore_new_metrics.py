@@ -60,6 +60,15 @@ FINDINGS (run of 2026-08-07 over the 19-track example corpus):
   violin occupy the same register as the singer on narrow-band mono
   recordings. Needs source separation or a trained classifier.
 
+  RESOLVED (2026-08-11), and neither of those turned out to be necessary.
+  The conclusion above was right about the cause and wrong about the cure:
+  the problem is that pyin is a *monophonic* tracker. Working from the
+  syllabic modulation of the envelope instead -- with the beat comb
+  notched out, since eighth notes at 130 BPM sit at 4.3 Hz right on top of
+  the syllable rate -- separates the corpus at d' = 2.0 for 18/19, in
+  0.12 s/track. Shipped as compas_core/vocal.py; scripts/validate_vocal.py
+  re-fits the threshold on a real library.
+
 Run: python scripts/explore_new_metrics.py
 """
 

@@ -80,17 +80,31 @@ def _viterbi_tempo_path(scores: np.ndarray, bpms: np.ndarray) -> np.ndarray:
     return path
 
 
-def _local_tempo_curve(y: np.ndarray, sr: int, spec: RhythmSpec) -> np.ndarray:
-    """Local beat-level tempo (one value per BLOCK_SEC), range-constrained."""
+def compute_tempogram(y: np.ndarray, sr: int) -> np.ndarray:
+    """Onset autocorrelation tempogram at TEMPO_HOP: (win, n_frames), where
+    the row index is the lag in frames.
+
+    Deliberately independent of RhythmSpec — the spec only picks which rows
+    to read — so one tempogram serves every rhythm hypothesis. The rhythm
+    auto-detector and the final tempo pass would otherwise build the same
+    matrix twice, and this is the most expensive step in the tempo path.
+    """
     import librosa
-    import scipy.signal
 
     oenv = librosa.onset.onset_strength(y=y, sr=sr, hop_length=TEMPO_HOP)
     frame_rate = sr / TEMPO_HOP
     win = int(TEMPOGRAM_WINDOW_SEC * frame_rate) | 1
-    tg = librosa.feature.tempogram(
-        onset_envelope=oenv, sr=sr, hop_length=TEMPO_HOP, win_length=win
-    )  # (win, n_frames); row index == lag in frames
+    return librosa.feature.tempogram(
+        onset_envelope=oenv, sr=sr, hop_length=TEMPO_HOP, win_length=win)
+
+
+def _local_tempo_curve(y: np.ndarray, sr: int, spec: RhythmSpec,
+                       tempogram: np.ndarray | None = None) -> np.ndarray:
+    """Local beat-level tempo (one value per BLOCK_SEC), range-constrained."""
+    import scipy.signal
+
+    frame_rate = sr / TEMPO_HOP
+    tg = compute_tempogram(y, sr) if tempogram is None else tempogram
 
     lags = np.arange(tg.shape[0], dtype=float)
     with np.errstate(divide="ignore"):
@@ -156,14 +170,17 @@ def analyze_tempo(
     sr: int,
     spec: RhythmSpec,
     onset_env: np.ndarray | None = None,
+    tempogram: np.ndarray | None = None,
 ) -> TempoResult:
+    """``onset_env`` (hop=HOP) and ``tempogram`` (hop=TEMPO_HOP) are both
+    rhythm-independent; pass them in to avoid recomputing per hypothesis."""
     import librosa
 
     oenv = onset_env if onset_env is not None else librosa.onset.onset_strength(
         y=y, sr=sr, hop_length=HOP
     )
 
-    curve = _local_tempo_curve(y, sr, spec)
+    curve = _local_tempo_curve(y, sr, spec, tempogram=tempogram)
 
     # Trim tempogram edge effects (half a window at each end) before stats.
     n_edge = int(TEMPOGRAM_WINDOW_SEC / 2 / BLOCK_SEC)

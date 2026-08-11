@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 
 ANALYSIS_SR = 22050  # mono @ 22.05 kHz is plenty for beat/key/energy features
 
-_SOUNDFILE_EXTS = {".flac", ".wav", ".ogg", ".oga", ".aiff", ".aif"}
+# libsndfile >= 1.1 decodes MP3, so the ffmpeg fallback is only needed for
+# the MPEG-4 family (m4a/aac) and wma. Every ffmpeg call is a process spawn
+# plus a full-file pipe, so keeping MP3 in-process is both faster and quieter.
+_SOUNDFILE_EXTS = {".flac", ".wav", ".ogg", ".oga", ".aiff", ".aif", ".mp3"}
 
 
 def load_audio(path: str | Path, sr: int = ANALYSIS_SR) -> tuple[np.ndarray, int]:
@@ -34,12 +38,25 @@ def _load_soundfile(path: Path, sr: int) -> np.ndarray:
     return np.ascontiguousarray(y, dtype=np.float32)
 
 
+def _no_console_kwargs() -> dict:
+    """Keep ffmpeg from flashing up a console window on Windows.
+
+    The GUI runs windowed (pythonw.exe, or the packaged build), so it has no
+    console of its own — without this flag Windows gives the child one, and
+    a batch of m4a files pops a command prompt per track.
+    """
+    if sys.platform != "win32":
+        return {}
+    return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+
+
 def _load_ffmpeg(path: Path, sr: int) -> np.ndarray:
     cmd = [
         "ffmpeg", "-v", "error", "-i", str(path),
         "-ac", "1", "-ar", str(sr), "-f", "f32le", "-",
     ]
-    proc = subprocess.run(cmd, capture_output=True, check=False)
+    proc = subprocess.run(
+        cmd, capture_output=True, check=False, **_no_console_kwargs())
     if proc.returncode != 0 or not proc.stdout:
         raise RuntimeError(
             f"ffmpeg failed to decode {path.name}: {proc.stderr.decode(errors='replace')[:400]}"

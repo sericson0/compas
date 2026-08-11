@@ -30,6 +30,10 @@ BUTTON_BORDER = "#343a52"
 METRIC_GOOD = "#4CAF50"
 METRIC_WARN = "#FF9800"
 METRIC_BAD = "#F44336"
+# Ticked checkboxes read as neutral state, not as an accent/action, so they
+# are gray rather than orange.
+CHECK_FILL = "#9aa0b4"
+CHECK_BORDER = "#c3c8da"
 
 STYLESHEET = f"""
 QToolBar {{
@@ -184,8 +188,8 @@ QMenu::indicator {{
     background: {PANEL_BACKGROUND};
 }}
 QMenu::indicator:checked {{
-    background: {ACCENT};
-    border-color: {ACCENT_BRIGHT};
+    background: {CHECK_FILL};
+    border-color: {CHECK_BORDER};
 }}
 
 QCheckBox {{

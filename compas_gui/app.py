@@ -32,8 +32,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from compas_core import facets
 from compas_gui import theme
-from compas_gui.model import COLUMNS, TrackRow, TrackTableModel
+from compas_gui.model import (
+    COLUMN_TOOLTIPS,
+    METRIC_COLUMNS,
+    TrackRow,
+    TrackTableModel,
+)
 from compas_gui.workers import (
     AnalyzeTask,
     LibrosaWarmup,
@@ -46,6 +52,8 @@ RHYTHM_CHOICES = ["auto", "tango", "vals", "milonga"]
 
 # Columns that can never be hidden via the Columns menu.
 ALWAYS_VISIBLE_COLUMNS = {"File", "Status"}
+
+VOCABULARY_LABELS = {facets.ENGLISH: "English", facets.TANGO: "Tango"}
 
 
 class StayOpenMenu(QMenu):
@@ -86,14 +94,21 @@ class WriteTagsDialog(QDialog):
         self.cb_bpm = QCheckBox("BPM (standard tag — VirtualDJ reads this)")
         self.cb_key = QCheckBox("Initial key (standard tag)")
         self.cb_compas = QCheckBox(
-            "COMPAS_* fields (energy, drive, stability, timing, BPM range…)")
+            "COMPAS_* fields (energy, drive, articulation, texture, "
+            "harmony, voice, stability, timing, BPM range…)")
+        self.cb_facets = QCheckBox(
+            "COMPAS_FACETS — the composed phrase, in the vocabulary and "
+            "axes currently selected")
         self.cb_comment = QCheckBox(
             "Append \"COMPAS Energy N\" to the comment "
             "(keeps existing comment text)")
         self.cb_bpm.setChecked(settings.value("tags/bpm", True, bool))
         self.cb_key.setChecked(settings.value("tags/key", True, bool))
         self.cb_compas.setChecked(settings.value("tags/compas", True, bool))
+        self.cb_facets.setChecked(settings.value("tags/facets", True, bool))
         self.cb_comment.setChecked(settings.value("tags/comment", False, bool))
+        self.cb_facets.setEnabled(self.cb_compas.isChecked())
+        self.cb_compas.toggled.connect(self.cb_facets.setEnabled)
 
         fmt_row = QHBoxLayout()
         fmt_row.addWidget(QLabel("Key format:"))
@@ -104,7 +119,8 @@ class WriteTagsDialog(QDialog):
         fmt_row.addWidget(self.key_format)
         fmt_row.addStretch(1)
 
-        for w in (self.cb_bpm, self.cb_key, self.cb_compas, self.cb_comment):
+        for w in (self.cb_bpm, self.cb_key, self.cb_compas, self.cb_facets,
+                  self.cb_comment):
             lay.addWidget(w)
         lay.addLayout(fmt_row)
 
@@ -119,6 +135,7 @@ class WriteTagsDialog(QDialog):
             "bpm": self.cb_bpm.isChecked(),
             "key": self.cb_key.isChecked(),
             "compas": self.cb_compas.isChecked(),
+            "facets": self.cb_facets.isChecked(),
             "comment": self.cb_comment.isChecked(),
             "camelot": self.key_format.currentIndex() == 1,
         }
@@ -132,7 +149,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.settings = QSettings("compas", "compas")
 
-        self.model = TrackTableModel()
+        self.model = TrackTableModel(self._facet_axes(), self._vocabulary())
         self.proxy = QSortFilterProxyModel()
         self.proxy.setSourceModel(self.model)
         self.proxy.setSortRole(Qt.UserRole)
@@ -190,6 +207,20 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.rhythm_combo)
         tb.addSeparator()
 
+        self.fast_check = QCheckBox("Fast")
+        self.fast_check.setToolTip(
+            "Skip harmonic/percussive separation — roughly 4× faster on a "
+            "big batch.\n"
+            "Only the Key and Camelot columns are affected: everything else "
+            "(BPM, stability, drive, energy, loudness) comes out identical.\n"
+            "On the example corpus 3 tracks of 19 got a different key, with "
+            "no net accuracy loss against their Mixed In Key tags.")
+        self.fast_check.setChecked(self.settings.value("analysis/fast", False, bool))
+        self.fast_check.toggled.connect(
+            lambda on: self.settings.setValue("analysis/fast", on))
+        tb.addWidget(self.fast_check)
+        tb.addSeparator()
+
         self.btn_analyze = QPushButton("▶  Analyze")
         self.btn_analyze.setObjectName("AnalyzeButton")
         self.btn_analyze.setCursor(Qt.PointingHandCursor)
@@ -220,6 +251,19 @@ class MainWindow(QMainWindow):
         btn_columns.setMenu(self._build_columns_menu())
         tb.addWidget(btn_columns)
 
+        btn_facets = QToolButton()
+        btn_facets.setText("Facets ▾")
+        btn_facets.setToolTip(
+            "Describe each track in words instead of numbers.\n"
+            "Tick the axes you want to compare over: each adds a ≡ column, "
+            "and the Facets column composes them into a phrase.\n"
+            "Nothing here is a new measurement — a facet is a threshold over "
+            "a column you already have.")
+        btn_facets.setPopupMode(QToolButton.InstantPopup)
+        self.facets_menu = self._build_facets_menu()
+        btn_facets.setMenu(self.facets_menu)
+        tb.addWidget(btn_facets)
+
         tb.addSeparator()
         act_clear = QAction("Clear", self)
         act_clear.triggered.connect(self._clear)
@@ -236,15 +280,19 @@ class MainWindow(QMainWindow):
 
     def _build_columns_menu(self) -> QMenu:
         menu = StayOpenMenu(self)
+        menu.setToolTipsVisible(True)
         hidden = self._hidden_columns()
-        for col, (header, _disp, _sort) in enumerate(COLUMNS):
-            if header in ALWAYS_VISIBLE_COLUMNS:
+        # Metric columns come first and keep their indices when facet
+        # columns are added or removed, so this menu never needs rebuilding.
+        for col, column in enumerate(METRIC_COLUMNS):
+            if column.header in ALWAYS_VISIBLE_COLUMNS:
                 continue
-            act = QAction(header, menu)
+            act = QAction(column.header, menu)
+            act.setToolTip(COLUMN_TOOLTIPS.get(column.header, ""))
             act.setCheckable(True)
-            act.setChecked(header not in hidden)
+            act.setChecked(column.header not in hidden)
             act.toggled.connect(
-                lambda shown, c=col, h=header: self._set_column_shown(
+                lambda shown, c=col, h=column.header: self._set_column_shown(
                     c, h, shown))
             menu.addAction(act)
         return menu
@@ -260,8 +308,83 @@ class MainWindow(QMainWindow):
 
     def _apply_column_visibility(self) -> None:
         hidden = self._hidden_columns()
-        for col, (header, _disp, _sort) in enumerate(COLUMNS):
-            self.table.setColumnHidden(col, header in hidden)
+        for col, column in enumerate(self.model.columns):
+            self.table.setColumnHidden(col, column.header in hidden)
+
+    # --- facets -----------------------------------------------------------
+    def _facet_axes(self) -> tuple[str, ...]:
+        """Selected axis keys, filtered against the axes that exist."""
+        raw = self.settings.value("facets/axes", None, str)
+        if raw is None:
+            return facets.DEFAULT_AXIS_KEYS
+        try:
+            keys = json.loads(raw)
+        except (TypeError, ValueError):
+            return facets.DEFAULT_AXIS_KEYS
+        return tuple(k for k in keys if k in facets.AXES_BY_KEY)
+
+    def _vocabulary(self) -> str:
+        value = self.settings.value("facets/vocabulary", facets.ENGLISH, str)
+        return value if value in facets.VOCABULARIES else facets.ENGLISH
+
+    def _build_facets_menu(self) -> QMenu:
+        menu = StayOpenMenu(self)
+        menu.setToolTipsVisible(True)
+
+        vocabulary = self._vocabulary()
+        header = menu.addAction("Vocabulary")
+        header.setEnabled(False)
+        self._vocab_actions: dict[str, QAction] = {}
+        for name in facets.VOCABULARIES:
+            act = QAction(f"   {VOCABULARY_LABELS[name]}", menu)
+            act.setCheckable(True)
+            act.setChecked(name == vocabulary)
+            act.setToolTip(
+                "Words for the same thresholds: "
+                + ", ".join(a.labels[name][-1] for a in facets.AXES[:4]) + "…")
+            act.toggled.connect(
+                lambda on, v=name: on and self._set_vocabulary(v))
+            menu.addAction(act)
+            self._vocab_actions = getattr(self, "_vocab_actions", {})
+            self._vocab_actions[name] = act
+
+        menu.addSeparator()
+        axes_header = menu.addAction("Axes to compare over")
+        axes_header.setEnabled(False)
+        selected = set(self._facet_axes())
+        for axis in facets.AXES:
+            act = QAction(f"   {axis.name}", menu)
+            act.setCheckable(True)
+            act.setChecked(axis.key in selected)
+            act.setToolTip(COLUMN_TOOLTIPS.get(axis.name) or axis.help)
+            act.toggled.connect(
+                lambda on, k=axis.key: self._set_axis_selected(k, on))
+            menu.addAction(act)
+        return menu
+
+    def _set_vocabulary(self, vocabulary: str) -> None:
+        if vocabulary == self.model.vocabulary:
+            return
+        self.settings.setValue("facets/vocabulary", vocabulary)
+        for name, act in getattr(self, "_vocab_actions", {}).items():
+            act.blockSignals(True)
+            act.setChecked(name == vocabulary)
+            act.blockSignals(False)
+        self._rebuild_facet_columns(self.model.axis_keys, vocabulary)
+
+    def _set_axis_selected(self, key: str, selected: bool) -> None:
+        keys = [a.key for a in facets.AXES
+                if (a.key in self.model.axis_keys or a.key == key)
+                and (a.key != key or selected)]
+        self.settings.setValue("facets/axes", json.dumps(keys))
+        self._rebuild_facet_columns(keys, self.model.vocabulary)
+
+    def _rebuild_facet_columns(self, axis_keys, vocabulary: str) -> None:
+        # A model reset drops per-column state, so re-apply what the view
+        # owns: hidden metric columns and the File column's width.
+        self.model.set_facets(axis_keys, vocabulary)
+        self._apply_column_visibility()
+        self.table.setColumnWidth(0, 340)
 
     # --- adding files ----------------------------------------------------
     def dragEnterEvent(self, event) -> None:
@@ -291,32 +414,41 @@ class MainWindow(QMainWindow):
                 f"{len(self.model.rows)} file(s) loaded — press Analyze.")
 
     # --- analysis --------------------------------------------------------
+    def _fast_mode(self) -> bool:
+        return self.fast_check.isChecked()
+
     def _analyze_pending(self) -> None:
         rhythm = self.rhythm_combo.currentText()
+        fast = self._fast_mode()
         started = 0
         for i, row in enumerate(self.model.rows):
             if row.status in ("pending", "error") or (
-                    row.status == "done" and row.rhythm_override != rhythm):
+                    row.status == "done"
+                    and (row.rhythm_override != rhythm
+                         or row.fast_mode != fast)):
                 row.rhythm_override = rhythm
+                row.fast_mode = fast
                 row.status = "queued"
                 row.error = ""
                 self.model.refresh_row(i)
                 self.pool.start(AnalyzeTask(
-                    self.generation, i, row.path, rhythm, self.signals))
+                    self.generation, i, row.path, rhythm, self.signals, fast))
                 started += 1
         if started:
             self._pending += started
             self._update_progress()
 
     def _reanalyze_rows(self, rows: list[int], rhythm: str) -> None:
+        fast = self._fast_mode()
         for i in rows:
             row = self.model.rows[i]
             row.rhythm_override = rhythm
+            row.fast_mode = fast
             row.status = "queued"
             row.error = ""
             self.model.refresh_row(i)
             self.pool.start(AnalyzeTask(
-                self.generation, i, row.path, rhythm, self.signals))
+                self.generation, i, row.path, rhythm, self.signals, fast))
         self._pending += len(rows)
         self._update_progress()
 
@@ -409,10 +541,11 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.Accepted:
             return
         opts = dlg.options()
-        for k in ("bpm", "key", "compas", "comment"):
+        for k in ("bpm", "key", "compas", "facets", "comment"):
             self.settings.setValue(f"tags/{k}", opts[k])
         self.settings.setValue(
             "tags/key_format", "camelot" if opts["camelot"] else "standard")
+        vocabulary = self.model.vocabulary if opts["facets"] else None
 
         from compas_core.tags import append_energy_comment, write_tags
 
@@ -428,7 +561,10 @@ class MainWindow(QMainWindow):
             try:
                 write_tags(
                     row.path,
-                    row.analysis.tag_fields(key_as_camelot=opts["camelot"]),
+                    row.analysis.tag_fields(
+                        key_as_camelot=opts["camelot"],
+                        facet_vocabulary=vocabulary,
+                        facet_axes=self.model.axis_keys),
                     write_bpm=opts["bpm"],
                     write_key=opts["key"],
                     write_compas=opts["compas"],

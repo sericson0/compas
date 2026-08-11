@@ -120,17 +120,21 @@ def _flux_contrast(S: np.ndarray, freqs: np.ndarray, band: tuple[float, float],
 
 def analyze_energy(
     y: np.ndarray,
-    y_percussive: np.ndarray,
     sr: int,
     tempo: TempoResult,
     spec: RhythmSpec,
+    S: np.ndarray | None = None,
+    onsets: np.ndarray | None = None,
 ) -> EnergyResult:
+    """``S`` (magnitude STFT at N_FFT/HOP) and ``onsets`` (frame indices) are
+    shared with the texture metrics; pass them in to avoid recomputing."""
     import librosa
 
     oenv = tempo.onset_env
 
     # --- drive: band-limited on/off-beat flux contrast ---------------------
-    S = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
+    if S is None:
+        S = np.abs(librosa.stft(y, n_fft=N_FFT, hop_length=HOP))
     freqs = librosa.fft_frequencies(sr=sr, n_fft=N_FFT)
     bf, of = _beat_offbeat_frames(tempo.beat_times, sr, S.shape[1])
 
@@ -155,7 +159,9 @@ def analyze_energy(
     syncopation = round(float(np.clip(raw_sync, 0.0, 1.0)) * 100, 0)
 
     # --- onset density ------------------------------------------------------
-    onsets = librosa.onset.onset_detect(onset_envelope=oenv, sr=sr, hop_length=HOP)
+    if onsets is None:
+        onsets = librosa.onset.onset_detect(
+            onset_envelope=oenv, sr=sr, hop_length=HOP)
     duration = len(y) / sr
     onset_density = len(onsets) / max(duration, 1e-9)
 

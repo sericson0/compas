@@ -42,10 +42,14 @@ class KeyResult:
     confidence: float  # 0-100
 
 
-def analyze_key(y_harmonic: np.ndarray, sr: int) -> KeyResult:
+def analyze_key(y_harmonic: np.ndarray, sr: int,
+                chroma: np.ndarray | None = None) -> KeyResult:
+    """``chroma`` is the CQT chroma of ``y_harmonic``; pass it in when it has
+    already been computed (analyze.py shares one CQT with harmony.py)."""
     import librosa
 
-    chroma = librosa.feature.chroma_cqt(y=y_harmonic, sr=sr)
+    if chroma is None:
+        chroma = librosa.feature.chroma_cqt(y=y_harmonic, sr=sr)
     full = chroma.mean(axis=1)
     full = full / max(full.sum(), 1e-9)
 
