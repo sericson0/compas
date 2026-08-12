@@ -65,14 +65,19 @@ MELODIC_BAND = (250.0, 2500.0)
 ATTACK_WINDOW_SEC = 0.050
 RELEASE_WINDOW_SEC = 0.140
 
-# 0-100 anchors, set from the spread over the example corpus
-# (attack 2.6-9.8 dB, release 3.2-8.2 dB).
-ATTACK_ANCHORS = (2.5, 9.0)
-RELEASE_ANCHORS = (3.0, 8.5)
+# 0-100 anchors: 1st/99th percentile over an 11,948-track library
+# (2026-08-11). The first version of these was fitted to a 19-track corpus
+# and was too narrow at both ends -- it pinned 8.2% of attacks at 0 and
+# 9.7% of anisotropies at 100, which is resolution thrown away exactly
+# where the facet cuts need it. Re-fit with scripts/calibrate_facets.py,
+# and re-fit the facet thresholds in the same pass: they are percentiles of
+# the scale these anchors define, so moving one without the other silently
+# reclassifies the library.
+ATTACK_ANCHORS = (1.45, 8.27)
+RELEASE_ANCHORS = (2.39, 8.87)
 ARTICULATION_WEIGHTS = (0.5, 0.5)   # (attack, release)
 
-# Corpus spread was 0.392-0.474; anchors sit just outside it.
-PERCUSSIVE_ANCHORS = (0.385, 0.480)
+PERCUSSIVE_ANCHORS = (0.346, 0.511)
 
 
 @dataclass

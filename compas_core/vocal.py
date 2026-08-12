@@ -33,19 +33,45 @@ and whatever syllabic energy remains is the vocal evidence:
 
 Validation status
 -----------------
-On the 19-track example corpus, whose filenames carry ground truth
-("- Instrumental -" versus a singer's name), this separates the classes at
-d' = 2.0 -- and it is a plateau across window lengths and notch widths, not
-one lucky cell of a parameter sweep. The base rate to beat is 63%.
+Scored on an 11,948-track library (2026-08-11) whose filenames carry ground
+truth: 3,421 marked "Instrumental" against 8,527 not, a 71% base rate.
+
+**Overall: d' = 1.03, 80% correct.** That is nine points over the base
+rate, and it is much weaker than the 19-track example corpus advertised
+(d' = 2.0). The small corpus was not wrong so much as unrepresentative --
+it was all 1935-1963 material, which is exactly where this method works.
+
+The honest summary is that accuracy depends on era and rhythm, and the
+averages hide both:
+
+    era          n      d'     correct        rhythm     n      d'    correct
+    pre-1930   1296   +0.43      66%          tango    9896   +1.26     80%
+    1930-34    1000   +0.82      86%          vals     1126   +0.23     85%
+    1935-39     983   +0.59      78%          milonga   926   +0.98     84%
+    1940-44    2298   +1.71      91%
+    1945-49    1397   +2.49      93%       (base rates: tango 69%,
+    1950-59    2103   +2.23      91%        vals 85%, milonga 84%)
+    1960+      2762   +0.44      76%
+
+Read that as: **trust it on tango from 1940-1959** (91-93%), treat it as a
+hint elsewhere, and note that on vals and milonga it barely beats guessing
+the majority class -- those repertoires are 84-85% vocal to begin with, so
+there is little for it to add.
+
+Two caveats on the table itself. The 1960+ row is polluted by reissue dates
+-- the library's tags run to 2023, so remastered golden-age sides land
+there. And "vocal" only means "the filename does not say instrumental", so
+an untagged instrumental counts as a detector error when it is really a
+labelling gap.
 
 The failure mode is musically coherent: a cantabile instrumental solo looks
-like a singer. Both misses on the corpus are exactly that -- Troilo's
-*Danzarin* and Laurenz's *Milonga De Mis Amores*.
+like a singer, which is what the early era is full of.
 
-Nineteen tracks is not a validation set. Run ``scripts/validate_vocal.py``
-over a real library to get an honest number and to re-fit VOCAL_THRESHOLD;
-where a filename already says "Instrumental", that answer is used instead
-of this one.
+Where a filename says "Instrumental" that answer is used and this estimate
+is only reported. Re-fit on your own collection with
+``scripts/validate_vocal.py``; ``scripts/rescore_vocal.py`` recomputes just
+these columns of an existing library CSV, so retuning does not cost a full
+re-analysis.
 """
 
 from __future__ import annotations
@@ -57,9 +83,20 @@ import numpy as np
 
 from compas_core.tempo import HOP
 
-MEL_BAND = (200.0, 3000.0)
+# Male golden-age singers sit at f0 ~100-350 Hz with F1/F2 up to ~1800, so
+# this window is the voice and little else. The original 200-3000 Hz was
+# wider on the theory that more formant range must help; on a real library
+# it does not, because above ~2 kHz a shellac transfer is mostly surface
+# noise. Narrowing improved every slice at once -- see the module docstring.
+MEL_BAND = (150.0, 2000.0)
 N_MELS = 40
 N_FFT = 2048
+
+# Percentile of the per-window curve used as the track score. Tango vocals
+# arrive after an instrumental introduction, so a mean dilutes them; the
+# estribillo era (roughly 1924-34) is more extreme still, one refrain of a
+# three-minute side. p85 beat p70 on early and golden-age material alike.
+SCORE_PERCENTILE = 85
 
 WINDOW_SEC = 14.0
 NOTCH_HZ = 0.18
@@ -70,11 +107,11 @@ REFERENCE_BAND = (0.5, 12.0)
 METRICAL_MULTIPLES = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0,
                       4.0, 5.0, 6.0, 8.0)
 
-# Fitted on 19 tracks, and that is exactly as provisional as it sounds: the
-# classes overlap between 14.1 and 17.6, and the optimum sits in a plateau
-# 0.1 wide (the top instrumental scores 14.1, the bottom vocal 14.2). The
-# value below is the fitted optimum, not a robust one. Re-fit it on a real
-# library with scripts/validate_vocal.py before leaning on the labels.
+# Fitted on 11,948 tracks. The global optimum is 13.8 (80.3%) and this is
+# 14.2 (80.1%) on purpose: 14.22 is the optimum for 1935-1955 material,
+# which is both where the method actually works and what gets played, and
+# giving up 0.2 points overall to be right there is the better trade. The
+# curve is flat between them either way -- 25 tracks in 11,948.
 VOCAL_THRESHOLD = 14.2      # on the 0-100 score
 # Above the threshold but singing for only part of the track = estribillo
 # (a refrain). Untested rather than merely provisional: the example corpus
@@ -151,7 +188,7 @@ def analyze_vocal(
 ) -> VocalResult:
     """``instrumental_hint``: the filename/title already says instrumental."""
     curve = _modulation_curve(y, sr, bpm) * 100.0
-    score = float(np.percentile(curve, 70))
+    score = float(np.percentile(curve, SCORE_PERCENTILE))
     fraction = float(np.mean(curve >= VOCAL_THRESHOLD))
 
     if instrumental_hint:

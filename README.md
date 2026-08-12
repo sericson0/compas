@@ -60,29 +60,31 @@ BPM/key" column) when present.
 
 ```
                                        rhythm      bpm stab  key enrg drv snc art tex hrm voice          LRA
-Biagi - El Incendio - 1938             tango     130.8   95   Am  7.0  99  19  97  68   9 instrumental*  5.7
-Canaro - Hotel Victoria - 1935         tango     119.5   95   D#  5.0  73  43  39  16  43 instrumental*  4.6
-D'Arienzo - Amarras - 1944             tango     122.4   86    A  4.6   6  47  13  60  63 vocal          7.0
-D'Arienzo - El Flete - 1936            tango     133.1   94    E  6.3  78  40  79  43  90 instrumental*  6.7
-Di Sarli - El Amanecer - 1942          tango     123.0   95    G  4.7  18  57  27  22  93 instrumental* 10.9
-Di Sarli - Nada - 1944                 tango     121.6   73    C  3.4   7  52  12  67  61 vocal?         7.0
-Donato - Carnaval De Mi Barrio - 1939  tango     136.5   94   Bm  6.4  75  37  67  83  52 vocal          5.8
-Malerba - Gitana Rusa - 1942           tango     117.9   79    A  3.7  33  25  40  94  25 vocal          7.1
-Pugliese - Alma De Bohemio - 1958      tango     122.3   48   Am  4.4  33  49  11  28  91 instrumental* 12.2
-Pugliese - El Adios - 1963             tango     123.3   47   Dm  3.9  16  46  23  94  47 vocal         13.2
-Troilo - Danzarin - 1963               tango     124.5   52    G  3.7  21  45  13   7  83 instrumental*  7.0
-Troilo - Toda Mi Vida - 1941           tango     132.5   92    A  5.5  38  50  64  67  71 instrumental?  8.3
-De Angelis - Mi Novia De Ayer - 1944   vals      213.8   90   A#  6.0  47  40  12  61  40 vocal          5.1
-Laurenz - Paisaje - 1943               vals      210.6   81    A  5.2  43  34  19  65  88 vocal          6.0
-Rodriguez - Tengo Mil Novias - 1939    vals      203.5   93    G  5.8  75  19  55  86  46 vocal          5.9
-Victor - Temo - 1940                   vals      219.3   90   Am  5.7  61  43   5  41  57 vocal          5.1
-Canaro - Silueta Portena - 1936        milonga   112.9   84  D#m  5.8  61  27  29  26  40 vocal          5.5
-D'Arienzo - Milonga Del Corazon - 1938 milonga   108.8   83    G  5.1  18  64   8  58  86 vocal          7.1
-Laurenz - Milonga De Mis Amores - 1944 milonga   103.8   89    A  4.7  13  64  18  38  58 instrumental*  5.8
+Biagi - El Incendio - 1938             tango     130.8   95   Am  7.0  99  19  95  63  12 instrumental*  5.7
+Canaro - Hotel Victoria - 1935         tango     119.5   95   D#  5.0  73  43  48  33  35 instrumental*  4.6
+D'Arienzo - Amarras - 1944             tango     122.4   86    A  4.6   6  47  23  58  49 vocal          7.0
+D'Arienzo - El Flete - 1936            tango     133.1   94    E  6.3  78  40  83  48  67 instrumental*  6.7
+Di Sarli - El Amanecer - 1942          tango     123.0   95    G  4.7  18  57  36  36  69 instrumental* 10.9
+Di Sarli - Nada - 1944                 tango     121.6   73    C  3.4   7  52  23  62  47 vocal          7.0
+Donato - Carnaval De Mi Barrio - 1939  tango     136.5   94   Bm  6.4  75  37  72  72  41 vocal          5.8
+Malerba - Gitana Rusa - 1942           tango     117.9   79    A  3.7  33  25  48  78  23 vocal          7.1
+Pugliese - Alma De Bohemio - 1958      tango     122.3   48   Am  4.4  33  49  23  40  68 instrumental* 12.2
+Pugliese - El Adios - 1963             tango     123.3   47   Dm  3.9  16  46  33  78  38 vocal         13.2
+Troilo - Danzarin - 1963               tango     124.5   52    G  3.7  21  45  24  28  63 instrumental*  7.0
+Troilo - Toda Mi Vida - 1941           tango     132.5   92    A  5.5  38  50  69  62  55 vocal          8.3
+De Angelis - Mi Novia De Ayer - 1944   vals      213.8   90   A#  6.0  47  40  23  59  33 vocal          5.1
+Laurenz - Paisaje - 1943               vals      210.6   81    A  5.2  43  34  30  61  66 vocal          6.0
+Rodriguez - Tengo Mil Novias - 1939    vals      203.5   93    G  5.8  75  19  62  73  37 vocal          5.9
+Victor - Temo - 1940                   vals      219.3   90   Am  5.7  61  43  17  47  45 vocal          5.1
+Canaro - Silueta Portena - 1936        milonga   112.9   84  D#m  5.8  61  27  38  39  33 vocal          5.5
+D'Arienzo - Milonga Del Corazon - 1938 milonga   108.8   83    G  5.1  18  64  20  57  65 vocal          7.1
+Laurenz - Milonga De Mis Amores - 1944 milonga   103.8   89    A  4.7  13  64  28  46  45 instrumental*  5.8
 ```
 
-`*` = taken from the filename, `?` = a close audio call. BPM range, timing
-and LUFS are omitted here for width; the CLI and GUI show them all.
+`*` = taken from the filename. BPM range, timing and LUFS are omitted here
+for width; the CLI and GUI show them all. All nineteen voice calls are
+correct, which is a pleasant result and — as [Vocal
+presence](#vocal-presence) explains at length — not a representative one.
 
 Sanity checks worth noticing:
 
@@ -163,9 +165,11 @@ Two things worth being clear about:
    computed that is not already in the table. A label that reads wrong is a
    threshold to argue with, and the number it came from is in the next
    column over.
-2. **The thresholds are provisional.** Every cut point was placed to split a
-   19-track corpus into sensible groups. That is enough to make the feature
-   usable and nowhere near enough to make it right — see
+2. **The thresholds are calibrated, not universal.** They are the 25th and
+   75th percentiles of an 11,948-track library, so half of that collection
+   reads as unremarkable on any given axis and a quarter earns each outer
+   word. A collection weighted differently — heavy on Canaro, or on
+   post-war material — will want its own; see
    [Calibrating on your own library](#calibrating-on-your-own-library).
 
 ## Vocal presence
@@ -189,34 +193,64 @@ fraction of a BPM, so the metrical comb can simply be notched out of the
 modulation spectrum, and the syllabic energy that survives is the vocal
 evidence.
 
-On the 19-track corpus this separates the classes at **d′ = 2.0**
-(instrumentals mean 12.6, vocals 17.3) for **18/19** at the fitted
-threshold. It is a plateau across window lengths and notch widths, not one
-lucky cell of a parameter sweep.
+### How well it actually works
 
-Read that number with the care it deserves:
+Scored on an **11,948-track library** whose filenames carry ground truth —
+3,421 marked "Instrumental" against 8,527 not, a 71% base rate.
 
-- **19 tracks is not a validation set**, and the two classes overlap between
-  14.1 and 17.6. The optimum sits in a plateau 0.1 wide — the top
-  instrumental scores 14.1, the bottom vocal 14.2. `VOCAL_THRESHOLD` is the
-  fitted optimum, not a robust one.
+**Overall: d′ = 1.03, 80% correct.** Nine points over the base rate, and a
+long way below what the 19-track example corpus advertised (d′ = 2.0). The
+small corpus was not wrong so much as unrepresentative: it is all 1935–1963
+material, which is exactly where this method works.
+
+The averages hide the thing that matters, which is that accuracy depends
+strongly on era and on rhythm:
+
+| era | n | d′ | correct | | rhythm | n | d′ | correct | base |
+|---|---|---|---|---|---|---|---|---|---|
+| pre-1930 | 1296 | +0.43 | 66% | | tango | 9896 | +1.26 | 80% | 69% |
+| 1930–34 | 1000 | +0.82 | 86% | | vals | 1126 | +0.23 | 85% | 85% |
+| 1935–39 | 983 | +0.59 | 78% | | milonga | 926 | +0.98 | 84% | 84% |
+| **1940–44** | 2298 | **+1.71** | **91%** |
+| **1945–49** | 1397 | **+2.49** | **93%** |
+| **1950–59** | 2103 | **+2.23** | **91%** |
+| 1960+ | 2762 | +0.44 | 76% |
+
+Read that as: **trust it on tango from 1940–1959**, treat it as a hint
+elsewhere, and note that on **vals and milonga it barely beats guessing** —
+those repertoires are 84–85% vocal to begin with, so there is little for it
+to add.
+
+Two caveats on the table itself. The 1960+ row is polluted by reissue dates:
+the library's tags run to 2023, so remastered golden-age sides land there.
+And "vocal" only means "the filename does not say instrumental", so an
+untagged instrumental counts as a detector error when it is really a
+labelling gap.
+
+Also worth knowing:
+
+- **The band and the statistic were tuned on real data, not the corpus.** A
+  grid over both, scored separately on early and golden-age material, moved
+  the window from 200–3000 Hz to **150–2000 Hz** and the statistic from the
+  70th to the **85th percentile**. That improved every slice at once (early
+  d′ 0.74→0.96, golden-age 1.99→2.20). Above ~2 kHz a shellac transfer is
+  mostly surface noise, so the wider band was adding noise rather than
+  formants; the higher percentile catches singers who only take a refrain.
 - **The failure mode is musically coherent**: a cantabile instrumental solo
-  looks like a singer. The single miss is exactly that — Laurenz's *Milonga
-  De Mis Amores*, whose melody line sings. Troilo's *Danzarín* is the next
-  closest for the same reason.
+  looks like a singer, and the early era is full of them.
 - **A filename beats the audio.** Where the title says "Instrumental" that
   answer is used and the audio estimate is only reported, exactly as a GENRE
   tag overrides the rhythm heuristic. The rule is one-directional: the word
   being present is reliable, its absence proves nothing.
-- **`estribillo` is untested, not merely provisional.** The corpus contains
-  no labelled refrain, so the cut is set where the corpus produces none.
-  Until it is calibrated, read "estribillo" as "vocal, possibly brief".
+- **`estribillo` is untested, not merely provisional.** No labelled refrain
+  set exists, so the cut is set where a library produces none — it fires on
+  0% of the 11,948. Read "estribillo" as "vocal, possibly brief".
 
-To score it on your own library — which is the real test:
+To score it on your own library:
 
 ```
 python scripts/validate_vocal.py D:\Tango
-python scripts/validate_vocal.py library.csv     # from compas_cli --csv
+python scripts/validate_vocal.py library.csv     # from analyze_library.py
 ```
 
 It reports d′, precision/recall, the misses by name, and the threshold to
@@ -249,24 +283,86 @@ established. The Harmony facet axis is therefore **off by default** —
 calibrate it on a real library before trusting it, or leave it off and lose
 nothing else.
 
+It was also the worst-anchored metric: on 11,948 tracks the original
+`VARIETY_ANCHORS` saturated **21% of the library at 100**, i.e. a fifth of
+it was reported as equally, maximally varied. The anchors are now fitted to
+that library, but the underlying doubt stands.
+
+## Calibration: what 11,948 tracks changed
+
+The thresholds and anchors that ship were fitted on a real discography
+(11,948 files, 142 GB, 1916–2023, median year 1945). The 19-track versions
+they replaced were wrong nearly everywhere:
+
+| axis | 19 tracks | 11,948 tracks |
+|---|---|---|
+| drive | (30, 60) | **(16, 50)** |
+| articulation | (25, 55) | (27, 55) |
+| texture | (35, 65) | (41, 70) |
+| syncopation | (35, 55) | (39, 51) |
+| harmony | (45, 80) | (45, 72) |
+| energy | (4.5, 6.0) | (4.0, 5.2) |
+| dynamics | (6.0, 9.0) | (5.6, 8.6) |
+
+And the anchors underneath them, which were clipping badly:
+
+| anchor | was | now | clipped |
+|---|---|---|---|
+| `ATTACK_ANCHORS` | (2.5, 9.0) | (1.45, 8.27) | 8.2% at 0 |
+| `RELEASE_ANCHORS` | (3.0, 8.5) | (2.39, 8.87) | 4.4% at 0 |
+| `PERCUSSIVE_ANCHORS` | (0.385, 0.48) | (0.346, 0.511) | 6.9% at 0, 9.7% at 100 |
+| `VARIETY_ANCHORS` | (6.5, 9.0) | (6.28, 9.95) | **20.6% at 100** |
+
+Three things that generalise beyond this particular library:
+
+1. **Anchors and thresholds must be re-fitted together.** The thresholds are
+   percentiles *of the scale the anchors define*, so changing one without
+   the other silently reclassifies everything. Correcting the anchors moved
+   the harmony cuts from (64, 89) to (45, 72) — same data, different scale.
+2. **A small corpus flatters a metric it was fitted on.** Every headline
+   number here got worse under real data, the vocal detector most of all.
+3. **The rhythms want their own cuts.** Median drive runs milonga 12 /
+   tango 32 / vals 23; median harmony 59 / 79 / 64. One set for all three is
+   a compromise, and a large collection would justify splitting them.
+
 ## Calibrating on your own library
 
-The facet thresholds and the vocal threshold are fitted to 19 tracks. Two
-commands replace them with numbers from a real collection:
+The shipped thresholds come from an 11,948-track library (see
+[Calibration](#calibration-what-11948-tracks-changed)). To re-fit them on
+yours:
 
 ```
-python compas_cli.py D:\Tango --fast --csv library.csv
-python scripts/calibrate_facets.py library.csv
+python scripts/analyze_library.py D:\Tango --csv library.csv --fast
+python scripts/calibrate_facets.py library.csv --split 25 75 --per-rhythm
 python scripts/validate_vocal.py library.csv
 ```
 
-`calibrate_facets.py` proposes percentile cut points (terciles by default;
-`--split 20 80` makes the outer levels narrower, which usually reads better
-as labels), reports how much of each 0–100 anchor range the library actually
-occupies, and with `--per-rhythm` shows medians per rhythm. That last one
-matters: on the example corpus median drive runs milonga 18 / tango 33 /
-vals 54, so a single set of cut points is already a compromise, and a large
-library may justify per-rhythm thresholds.
+Use `analyze_library.py` rather than the CLI for anything large. It writes
+each row as it completes, resumes on a re-run (just run the same command
+again), survives individual failures, and **shuffles the work list** so that
+any partial CSV is a representative sample of the library rather than
+everything alphabetically before "Canaro" — which is what makes it possible
+to calibrate off a partial run instead of waiting hours for the end.
+
+`calibrate_facets.py` works in two steps, and the order matters:
+
+1. **Anchors** — the constants that map a raw measurement onto 0–100. Too
+   narrow and the score pins at 0 or 100 for a slice of the library, which
+   is resolution thrown away exactly where the cuts need it.
+2. **Thresholds** — percentiles *of the scale those anchors define*. This
+   is why the script re-fits both in one pass: change an anchor without the
+   threshold and the label silently means something else.
+
+`--per-rhythm` is worth reading. The three rhythms do not share a
+distribution — median drive runs milonga 12 / tango 32 / vals 23 and median
+harmony 59 / 79 / 64 — so one set of cuts for all three is a deliberate
+compromise that a large enough collection would justify splitting.
+
+If you change the vocal detector itself, `scripts/rescore_vocal.py` updates
+only the five vocal columns of an existing CSV. Everything the detector
+needs beyond the audio is the tempo, which is already in the file, so
+retuning costs about twenty minutes on twelve thousand tracks instead of a
+full re-analysis.
 
 ## Rhythm selection
 
@@ -432,8 +528,10 @@ compas_core/       analysis library (shared by GUI, CLI, and future plugin)
 compas_gui/        PySide6 app (drag-drop table, tag writer, exports)
 compas_cli.py      batch CLI
 scripts/
+  analyze_library.py    resumable, parallel, shuffled whole-library run
+  calibrate_facets.py   re-fit anchors + facet thresholds from a library CSV
   validate_vocal.py     score the vocal detector on filename ground truth
-  calibrate_facets.py   re-fit facet thresholds from a library CSV
+  rescore_vocal.py      recompute only the vocal columns of a library CSV
 ```
 
 Setup from scratch:

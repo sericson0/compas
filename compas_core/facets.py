@@ -21,11 +21,24 @@ level, neutral included.
 
 Thresholds
 ----------
-Provisional. Every cut point below was placed to split the 19-track
-example corpus into sensible groups, which is enough to make the feature
-usable and nowhere near enough to make it right. Run
-``scripts/calibrate_facets.py`` over a real library to replace them with
-percentiles of an actual tango collection.
+Calibrated on an 11,948-track tango library (2026-08-11) at the 25th and
+75th percentile, so half of any collection reads as unremarkable on a given
+axis and skips the word, while a quarter earns each outer term.
+
+They replace a first set fitted to the 19-track example corpus, which was
+wrong almost everywhere -- drive was cut at (30, 60) against a real (16,
+50), and harmony at (45, 80) against (45, 72) once its anchors stopped
+clipping a fifth of the library at 100.
+
+Two things to know before re-fitting:
+
+* the cuts are percentiles of the 0-100 scales defined by the anchors in
+  ``texture.py`` and ``harmony.py``, so those must be re-fitted in the same
+  pass -- ``scripts/calibrate_facets.py`` does both, in that order;
+* the rhythms do not share a distribution. Median drive runs milonga 12 /
+  tango 32 / vals 23, and median harmony 59 / 79 / 64. One set of cuts for
+  all three is a deliberate compromise, and a large enough collection would
+  justify per-rhythm thresholds.
 """
 
 from __future__ import annotations
@@ -50,6 +63,10 @@ class Axis:
     help: str
     neutral: int | None = None                  # level omitted from labels
     default: bool = False                       # in the default selection
+    # Levels are named classes, not cut points on a continuum. Calibration
+    # must leave these alone: fitting percentiles to Voice's 0/1/2 produces
+    # thresholds of (0, 2), which silently reclassifies every instrumental.
+    categorical: bool = False
 
 
 def _tempo_rel(a: Any) -> float | None:
@@ -68,27 +85,27 @@ def _vocal_level(a: Any) -> float | None:
 AXES: tuple[Axis, ...] = (
     Axis(
         key="tempo", name="Tempo", value=_tempo_rel,
-        thresholds=(0.98, 1.05),
+        thresholds=(0.99, 1.05),
         labels={ENGLISH: ("slow", "medium", "fast"),
                 TANGO: ("lento", "medio", "rapido")},
         neutral=1, default=True,
         help="Tempo relative to what is typical for this rhythm, so a vals "
              "at 210 BPM is not automatically 'fast'. BPM divided by the "
-             "genre's typical tempo; cuts at 0.98 and 1.05.",
+             "genre's typical tempo; cuts at 0.99 and 1.05.",
     ),
     Axis(
         key="drive", name="Character", value=lambda a: a.drive,
-        thresholds=(30.0, 60.0),
+        thresholds=(16.0, 50.0),
         labels={ENGLISH: ("smooth", "balanced", "driving"),
                 TANGO: ("melodico", "mixto", "ritmico")},
         neutral=1, default=True,
         help="The classic tango axis, from Drive: how hard the compas is "
-             "marked. Melodico below 30, ritmico from 60.",
+             "marked. Melodico below 16, ritmico from 50.",
     ),
     Axis(
         key="articulation", name="Articulation",
         value=lambda a: a.articulation,
-        thresholds=(25.0, 55.0),
+        thresholds=(27.0, 55.0),
         labels={ENGLISH: ("legato", "detached", "staccato"),
                 TANGO: ("ligado", "medio", "picado")},
         neutral=1,
@@ -98,7 +115,7 @@ AXES: tuple[Axis, ...] = (
     ),
     Axis(
         key="texture", name="Texture", value=lambda a: a.percussiveness,
-        thresholds=(35.0, 65.0),
+        thresholds=(41.0, 70.0),
         labels={ENGLISH: ("sustained", "mixed", "percussive"),
                 TANGO: ("lirico", "equilibrado", "percusivo")},
         neutral=1,
@@ -108,7 +125,7 @@ AXES: tuple[Axis, ...] = (
     ),
     Axis(
         key="syncopation", name="Placement", value=lambda a: a.syncopation,
-        thresholds=(35.0, 55.0),
+        thresholds=(39.0, 51.0),
         labels={ENGLISH: ("straight", "mixed", "syncopated"),
                 TANGO: ("liso", "medio", "sincopado")},
         neutral=1,
@@ -122,7 +139,7 @@ AXES: tuple[Axis, ...] = (
         thresholds=(0.5,),
         labels={ENGLISH: ("steady", "flexible"),
                 TANGO: ("compas", "fraseo")},
-        neutral=0, default=True,
+        neutral=0, default=True, categorical=True,
         help="From Timing: steady enough to dance without surprises, or "
              "noticeable rubato. Steady is the unmarked case, so it is "
              "left out of the composed label.",
@@ -132,14 +149,14 @@ AXES: tuple[Axis, ...] = (
         thresholds=(0.5, 1.5),
         labels={ENGLISH: ("instrumental", "refrain", "vocal"),
                 TANGO: ("instrumental", "estribillo", "cantado")},
-        neutral=None, default=True,
+        neutral=None, default=True, categorical=True,
         help="Instrumental, a refrain (estribillo), or sung throughout. "
              "Taken from the filename when it says 'instrumental', "
              "otherwise estimated from the audio.",
     ),
     Axis(
         key="harmony", name="Harmony", value=lambda a: a.harmonic_variety,
-        thresholds=(45.0, 80.0),
+        thresholds=(45.0, 72.0),
         labels={ENGLISH: ("simple", "moderate", "complex"),
                 TANGO: ("directo", "elaborado", "complejo")},
         neutral=1,
@@ -151,7 +168,7 @@ AXES: tuple[Axis, ...] = (
     ),
     Axis(
         key="energy", name="Lift", value=lambda a: a.energy,
-        thresholds=(4.5, 6.0),
+        thresholds=(4.0, 5.2),
         labels={ENGLISH: ("gentle", "moderate", "lively"),
                 TANGO: ("suave", "medio", "energico")},
         neutral=1,
@@ -159,7 +176,7 @@ AXES: tuple[Axis, ...] = (
     ),
     Axis(
         key="dynamics", name="Dynamics", value=lambda a: a.lra,
-        thresholds=(6.0, 9.0),
+        thresholds=(5.6, 8.6),
         labels={ENGLISH: ("even", "dynamic", "dramatic"),
                 TANGO: ("parejo", "dinamico", "dramatico")},
         neutral=1,
@@ -171,7 +188,7 @@ AXES: tuple[Axis, ...] = (
         value=lambda a: 1.0 if a.key.endswith("m") else 0.0,
         thresholds=(0.5,),
         labels={ENGLISH: ("major", "minor"), TANGO: ("mayor", "menor")},
-        neutral=None,
+        neutral=None, categorical=True,
         help="Major or minor, from the estimated Key — so it inherits the "
              "key estimate's uncertainty on shellac transfers.",
     ),

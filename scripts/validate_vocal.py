@@ -35,6 +35,14 @@ from compas_core.vocal import (  # noqa: E402
 
 AUDIO_EXTS = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".wma"}
 
+# Tango filenames are full of accents (Falcón, Galé, Durán) and the Windows
+# console defaults to cp1252, which cannot encode them. Without this, simply
+# printing a miss list kills the script.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 def rows_from_csv(path: Path) -> list[dict]:
     with open(path, newline="", encoding="utf-8") as fh:

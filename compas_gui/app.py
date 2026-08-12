@@ -69,13 +69,18 @@ class StayOpenMenu(QMenu):
         super().mouseReleaseEvent(event)
 
 
+def _is_audio(p: Path) -> bool:
+    # "._name.m4a" is a macOS AppleDouble resource fork: right extension,
+    # no audio inside. A library copied from a Mac is full of them.
+    return p.suffix.lower() in AUDIO_EXTS and not p.name.startswith("._")
+
+
 def collect_audio_files(paths: list[Path]) -> list[Path]:
     files: list[Path] = []
     for p in paths:
         if p.is_dir():
-            files.extend(sorted(
-                f for f in p.rglob("*") if f.suffix.lower() in AUDIO_EXTS))
-        elif p.is_file() and p.suffix.lower() in AUDIO_EXTS:
+            files.extend(sorted(f for f in p.rglob("*") if _is_audio(f)))
+        elif p.is_file() and _is_audio(p):
             files.append(p)
     return files
 

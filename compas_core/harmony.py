@@ -43,8 +43,11 @@ import numpy as np
 FLOOR_PERCENTILE = 20.0
 MIN_BEATS = 16
 
-# Corpus spread of effective rank was 6.71-8.82.
-VARIETY_ANCHORS = (6.5, 9.0)
+# 1st/99th percentile of effective rank over an 11,948-track library
+# (2026-08-11). The 19-track fit of (6.5, 9.0) was badly short at the top:
+# 21% of the library saturated at 100, i.e. a fifth of it was reported as
+# equally, maximally varied. Re-fit with scripts/calibrate_facets.py.
+VARIETY_ANCHORS = (6.28, 9.95)
 
 
 @dataclass

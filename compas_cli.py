@@ -24,7 +24,10 @@ def collect_files(paths: list[str]) -> list[Path]:
         path = Path(p)
         if path.is_dir():
             files.extend(sorted(
-                f for f in path.rglob("*") if f.suffix.lower() in AUDIO_EXTS
+                f for f in path.rglob("*")
+                if f.suffix.lower() in AUDIO_EXTS
+                # "._name.m4a" is a macOS AppleDouble resource fork, not audio
+                and not f.name.startswith("._")
             ))
         elif path.is_file():
             files.append(path)
