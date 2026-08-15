@@ -14,9 +14,23 @@ from PySide6.QtWidgets import QApplication
 # --- palette ---------------------------------------------------------------
 BACKGROUND = "#12151f"
 PANEL_BACKGROUND = "#0b0e17"
-PANEL_ALT = "#10131d"
+# Was #10131d, which is 1.04:1 against PANEL_BACKGROUND — the zebra striping
+# was mathematically present and visually absent, and with the grid off that
+# left no row separator at all while tracking a value across a wide table.
+# #171b28 was the first fix and only reached 1.12:1; this is 1.25:1, which
+# survives being composited under a rhythm tint (1.16:1 inside one).
+PANEL_ALT = "#1f2436"
 GRID_LINE = "#1e2230"
+# GRID_LINE is right for a border against a *panel* (menus, tooltips), but at
+# 1.15:1 on BACKGROUND it disappeared where it was doing the most work: the
+# toolbar separators and the header rules that are the only thing dividing
+# twenty-odd columns of bare numbers with the grid switched off.
+RULE = "#2c3242"
 GRID_TEXT = "#5a5e70"
+# Column headers are the only label for twenty-odd columns of bare numbers,
+# and the status bar is where all progress and error reporting goes. Both
+# used GRID_TEXT at 2.84:1, well under the 4.5:1 readable threshold.
+LABEL_TEXT = "#8f95a8"
 TEXT_NORMAL = "#b0b4c0"
 TEXT_BRIGHT = "#f0f0f0"
 ACCENT = "#D96C30"          # deep orange
@@ -34,6 +48,9 @@ METRIC_BAD = "#F44336"
 # are gray rather than orange.
 CHECK_FILL = "#9aa0b4"
 CHECK_BORDER = "#c3c8da"
+# The filter box's placeholder is a real instruction ("Filter… (Ctrl+F)"), and
+# GRID_TEXT put it at 3.0:1 on the input background — subdued past legible.
+PLACEHOLDER_TEXT = "#767c90"
 
 STYLESHEET = f"""
 QToolBar {{
@@ -44,7 +61,7 @@ QToolBar {{
     spacing: 6px;
 }}
 QToolBar::separator {{
-    background: {GRID_LINE};
+    background: {RULE};
     width: 1px;
     margin: 4px 6px;
 }}
@@ -123,15 +140,37 @@ QTableView QTableCornerButton::section {{
 }}
 QHeaderView::section {{
     background: {BACKGROUND};
-    color: {GRID_TEXT};
+    color: {LABEL_TEXT};
     border: none;
-    border-right: 1px solid {GRID_LINE};
-    border-bottom: 1px solid {GRID_LINE};
-    padding: 5px 8px;
+    border-right: 1px solid {RULE};
+    border-bottom: 1px solid {RULE};
+    padding: 5px 4px;
     font-weight: 600;
 }}
 QHeaderView::section:hover {{
     color: {ACCENT_BRIGHT};
+}}
+/* Header padding was 5px 8px against the style's ~4px cell margin, so a
+   right-aligned header sat 4px left of the right-aligned numbers under it. */
+QTableView::item {{
+    padding: 0px 4px;
+}}
+
+QLineEdit {{
+    background: {PANEL_BACKGROUND};
+    color: {TEXT_NORMAL};
+    border: 1px solid {BUTTON_BORDER};
+    border-radius: 5px;
+    padding: 4px 8px;
+    selection-background-color: {BUTTON_SELECTED};
+    selection-color: {TEXT_BRIGHT};
+}}
+QLineEdit:hover {{
+    border-color: {RULE};
+}}
+QLineEdit:focus {{
+    border-color: {ACCENT};
+    color: {TEXT_BRIGHT};
 }}
 
 QComboBox {{
@@ -213,7 +252,7 @@ QCheckBox::indicator:checked {{
 
 QStatusBar {{
     background: {BACKGROUND};
-    color: {GRID_TEXT};
+    color: {LABEL_TEXT};
     border-top: 1px solid {GRID_LINE};
 }}
 
@@ -279,6 +318,62 @@ QProgressBar::chunk {{
     background: {ACCENT};
     border-radius: 3px;
 }}
+
+QMenuBar {{
+    background: {BACKGROUND};
+    color: {TEXT_NORMAL};
+    border-bottom: 1px solid {RULE};
+    padding: 2px 4px;
+}}
+QMenuBar::item {{
+    background: transparent;
+    padding: 4px 10px;
+    border-radius: 4px;
+}}
+QMenuBar::item:selected {{
+    background: {BUTTON_BG_HOVER};
+    color: {TEXT_BRIGHT};
+}}
+QMenuBar::item:pressed {{
+    background: {BUTTON_SELECTED};
+    color: {TEXT_BRIGHT};
+}}
+
+/* Declaring an explicit border on a button sends Qt down the
+   non-native-border path, and Fusion's focus rect is then never drawn — so
+   tabbing between Analyze / Stop / Columns / Facets / OK gave no feedback. */
+QPushButton:focus, QToolButton:focus, QCheckBox:focus {{
+    border-color: {ACCENT_BRIGHT};
+}}
+QPushButton:default {{
+    border-color: {ACCENT};
+}}
+
+/* An *unqualified* `color`/`background` in a stylesheet also claims the
+   QPalette::Disabled group, which overrides the disabled colours set in
+   apply_theme — so without these every greyed-out widget rendered
+   pixel-identical to a live one. AnalyzeButton had its own :disabled rule
+   and was the only thing in the app that visibly greyed out. */
+QPushButton:disabled, QToolButton:disabled {{
+    background: #1c2030;
+    color: {INACTIVE};
+    border-color: #262b3c;
+}}
+QCheckBox:disabled {{
+    color: {INACTIVE};
+}}
+QCheckBox:disabled::indicator {{
+    border-color: #262b3c;
+    background: {BACKGROUND};
+}}
+QComboBox:disabled {{
+    background: #1c2030;
+    color: {INACTIVE};
+    border-color: #262b3c;
+}}
+QMenu::item:disabled {{
+    color: #6b7080;
+}}
 """
 
 
@@ -300,7 +395,7 @@ def apply_theme(app: QApplication) -> None:
     pal.setColor(QPalette.ToolTipBase, QColor("#1a1e2c"))
     pal.setColor(QPalette.ToolTipText, QColor(TEXT_NORMAL))
     pal.setColor(QPalette.Link, QColor(ACCENT_BRIGHT))
-    pal.setColor(QPalette.PlaceholderText, QColor(GRID_TEXT))
+    pal.setColor(QPalette.PlaceholderText, QColor(PLACEHOLDER_TEXT))
     for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
         pal.setColor(QPalette.Disabled, role, QColor(INACTIVE))
     app.setPalette(pal)

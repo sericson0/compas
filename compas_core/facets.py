@@ -4,7 +4,7 @@ Each axis is one thresholded number that COMPAS already reports, rendered
 in one of two vocabularies:
 
     english   fast / driving / staccato / steady / instrumental
-    tango     rapido / ritmico / picado / compas / instrumental
+    tango     rápido / rítmico / picado / compás / instrumental
 
 Nothing here is a new measurement, and that is the point. A facet is a
 *view* of a column, so a label that reads wrong is a threshold to argue
@@ -77,9 +77,10 @@ def _tempo_rel(a: Any) -> float | None:
     return a.bpm / spec.bpm_typical
 
 
-def _vocal_level(a: Any) -> float | None:
-    return {"instrumental": 0.0, "estribillo": 1.0,
-            "vocal": 2.0}.get(a.vocal)
+# Vocal presence is disabled — see compas_core/analyze.py for why.
+# def _vocal_level(a: Any) -> float | None:
+#     return {"instrumental": 0.0, "estribillo": 1.0,
+#             "vocal": 2.0}.get(a.vocal)
 
 
 AXES: tuple[Axis, ...] = (
@@ -87,7 +88,7 @@ AXES: tuple[Axis, ...] = (
         key="tempo", name="Tempo", value=_tempo_rel,
         thresholds=(0.99, 1.05),
         labels={ENGLISH: ("slow", "medium", "fast"),
-                TANGO: ("lento", "medio", "rapido")},
+                TANGO: ("lento", "medio", "rápido")},
         neutral=1, default=True,
         help="Tempo relative to what is typical for this rhythm, so a vals "
              "at 210 BPM is not automatically 'fast'. BPM divided by the "
@@ -97,10 +98,10 @@ AXES: tuple[Axis, ...] = (
         key="drive", name="Character", value=lambda a: a.drive,
         thresholds=(16.0, 50.0),
         labels={ENGLISH: ("smooth", "balanced", "driving"),
-                TANGO: ("melodico", "mixto", "ritmico")},
+                TANGO: ("melódico", "intermedio", "rítmico")},
         neutral=1, default=True,
         help="The classic tango axis, from Drive: how hard the compas is "
-             "marked. Melodico below 16, ritmico from 50.",
+             "marked. Melódico below 16, rítmico from 50.",
     ),
     Axis(
         key="articulation", name="Articulation",
@@ -117,7 +118,7 @@ AXES: tuple[Axis, ...] = (
         key="texture", name="Texture", value=lambda a: a.percussiveness,
         thresholds=(41.0, 70.0),
         labels={ENGLISH: ("sustained", "mixed", "percussive"),
-                TANGO: ("lirico", "equilibrado", "percusivo")},
+                TANGO: ("lírico", "equilibrado", "percusivo")},
         neutral=1,
         help="Melodic/sustained versus percussive, from Texture "
              "(spectrogram anisotropy). Bowed strings and held bandoneon "
@@ -138,22 +139,23 @@ AXES: tuple[Axis, ...] = (
         value=lambda a: 1.0 if a.timing == "flexible" else 0.0,
         thresholds=(0.5,),
         labels={ENGLISH: ("steady", "flexible"),
-                TANGO: ("compas", "fraseo")},
+                TANGO: ("compás", "fraseo")},
         neutral=0, default=True, categorical=True,
         help="From Timing: steady enough to dance without surprises, or "
              "noticeable rubato. Steady is the unmarked case, so it is "
              "left out of the composed label.",
     ),
-    Axis(
-        key="vocal", name="Voice", value=_vocal_level,
-        thresholds=(0.5, 1.5),
-        labels={ENGLISH: ("instrumental", "refrain", "vocal"),
-                TANGO: ("instrumental", "estribillo", "cantado")},
-        neutral=None, default=True, categorical=True,
-        help="Instrumental, a refrain (estribillo), or sung throughout. "
-             "Taken from the filename when it says 'instrumental', "
-             "otherwise estimated from the audio.",
-    ),
+    # Vocal presence is disabled — see compas_core/analyze.py for why.
+    # Axis(
+    #     key="vocal", name="Voice", value=_vocal_level,
+    #     thresholds=(0.5, 1.5),
+    #     labels={ENGLISH: ("instrumental", "refrain", "vocal"),
+    #             TANGO: ("instrumental", "estribillo", "cantado")},
+    #     neutral=None, default=True, categorical=True,
+    #     help="Instrumental, a refrain (estribillo), or sung throughout. "
+    #          "Taken from the filename when it says 'instrumental', "
+    #          "otherwise estimated from the audio.",
+    # ),
     Axis(
         key="harmony", name="Harmony", value=lambda a: a.harmonic_variety,
         thresholds=(45.0, 72.0),
@@ -170,7 +172,7 @@ AXES: tuple[Axis, ...] = (
         key="energy", name="Lift", value=lambda a: a.energy,
         thresholds=(4.0, 5.2),
         labels={ENGLISH: ("gentle", "moderate", "lively"),
-                TANGO: ("suave", "medio", "energico")},
+                TANGO: ("suave", "medio", "enérgico")},
         neutral=1,
         help="From Energy (1-10): how much the track will move a floor.",
     ),
@@ -178,7 +180,7 @@ AXES: tuple[Axis, ...] = (
         key="dynamics", name="Dynamics", value=lambda a: a.lra,
         thresholds=(5.6, 8.6),
         labels={ENGLISH: ("even", "dynamic", "dramatic"),
-                TANGO: ("parejo", "dinamico", "dramatico")},
+                TANGO: ("parejo", "dinámico", "dramático")},
         neutral=1,
         help="Quiet-to-loud spread, from LRA. Reads low on noisy shellac "
              "transfers, so compare within a similar era.",
@@ -245,8 +247,8 @@ def label(
         level = axis_level(axis, analysis)
         if level is None:
             continue
-        name = axis.labels.get(vocabulary, axis.labels[ENGLISH])[
-            min(level, len(axis.labels[ENGLISH]) - 1)]
+        names = axis.labels.get(vocabulary, axis.labels[ENGLISH])
+        name = names[min(level, len(names) - 1)]
         fallback.append(name)
         if skip_neutral and axis.neutral is not None and level == axis.neutral:
             continue

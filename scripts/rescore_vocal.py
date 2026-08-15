@@ -77,6 +77,13 @@ def main() -> int:
                if c not in fieldnames]
     if missing:
         print(f"CSV is missing required columns: {missing}", file=sys.stderr)
+        if any(c.startswith("vocal") for c in missing):
+            print("\nVocal presence is currently DISABLED in "
+                  "compas_core/analyze.py, so\nlibrary CSVs no longer carry "
+                  "vocal_* columns. Re-enable it there (see the\nnote on "
+                  "TrackAnalysis) and re-run the analysis, or use\n"
+                  "scripts/validate_vocal.py against an audio folder, which "
+                  "calls the\ndetector directly.", file=sys.stderr)
         return 1
 
     print(f"{len(rows)} rows, {args.workers} workers")

@@ -15,7 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QModelIndex,
+    QSortFilterProxyModel,
+    Qt,
+)
 from PySide6.QtGui import QColor
 
 from compas_core import facets
@@ -25,15 +30,23 @@ _SRC_ABBR = {"override": "set", "genre-tag": "tag", "audio": "audio", "default":
 
 FACET_PREFIX = "≡ "     # ≡ — marks a column as a reading, not a number
 
-# Translucent tints over the dark table background.
+# Translucent tints over the dark table background. Alphas are not equal
+# because the hues are not: amber carries far more luminance than blue at the
+# same opacity, so the old flat 40/40/36 made milonga the loudest of the three
+# (1.27 lift against tango's 1.20). These are solved per hue for an equal
+# ~1.28 lift, which keeps the zebra visible inside a tint (1.16:1) and text
+# above 6:1 on all six composites.
 _RHYTHM_COLORS = {
-    "tango": QColor(66, 133, 244, 40),
-    "vals": QColor(52, 168, 83, 40),
-    "milonga": QColor(244, 180, 0, 36),
+    "tango": QColor(66, 133, 244, 52),
+    "vals": QColor(52, 168, 83, 48),
+    "milonga": QColor(244, 180, 0, 37),
 }
 
 _STATUS_COLORS = {
-    "queued": QColor(0x5a, 0x5e, 0x70),
+    # #5a5e70 is the value theme.py flags as unreadable (3.0:1 on the panel,
+    # 2.2:1 on a tinted alternating row) — and "queued" is the state every row
+    # sits in for the first seconds of a large batch.
+    "queued": QColor(0x9a, 0xa0, 0xb4),
     "analyzing": QColor(0xF3, 0xA1, 0x0F),
     "done": QColor(0x4C, 0xAF, 0x50),
     "error": QColor(0xF4, 0x43, 0x36),
@@ -52,12 +65,27 @@ class TrackRow:
 
 @dataclass(frozen=True)
 class Column:
+    # `header` is the stable identity: the Columns menu label, the
+    # COLUMN_TOOLTIPS key, and the key stored in the columns/hidden setting.
+    # `short` is only what the table paints, so headers can be abbreviated
+    # without invalidating anyone's saved column choices.
     header: str
     display: Callable[[TrackRow], str]
     sort: Callable[[TrackRow], Any]
     numeric: bool = False
-    tooltip: str = ""
+    tooltip: str = ""            # full help — header and Columns menu
+    summary: str = ""            # one-line form — cells
     facet: bool = False          # built from the Facets menu, not toggleable
+    # True when an unanalyzed row has no real value in this column, so sorting
+    # should park it at the end rather than sort it by a sentinel. False for
+    # File and Status, which read fine before analysis.
+    sinks_pending: bool = True
+    short: str = ""              # painted header; falls back to `header`
+    searchable: bool = False     # included in the filter box's haystack
+
+    @property
+    def label(self) -> str:
+        return self.short or self.header
 
 
 def _a(row: TrackRow, attr: str, fmt: str = "{}"):
@@ -89,14 +117,15 @@ def _rhythm_label(row: TrackRow) -> str:
     return f"{a.rhythm} ({src})"
 
 
-def _vocal_label(row: TrackRow) -> str:
-    """e.g. 'instrumental (tag)', or 'vocal ?' when the audio call is close."""
-    a = row.analysis
-    if a is None:
-        return ""
-    if a.vocal_source == "title":
-        return f"{a.vocal} (tag)"
-    return a.vocal + (" ?" if a.vocal_confidence < 0.25 else "")
+# Vocal presence is disabled — see compas_core/analyze.py for why.
+# def _vocal_label(row: TrackRow) -> str:
+#     """'instrumental (tag)', or 'vocal ?' when the audio call is close."""
+#     a = row.analysis
+#     if a is None:
+#         return ""
+#     if a.vocal_source == "title":
+#         return f"{a.vocal} (tag)"
+#     return a.vocal + (" ?" if a.vocal_confidence < 0.25 else "")
 
 
 # Shown on the header, on every cell of the column, and in the Columns menu.
@@ -162,12 +191,7 @@ _COLUMN_HELP = {
                "smeared on shellac, and this agrees with a hand-written "
                "expert ordering of 19 tracks at only Spearman 0.41. Calibrate "
                "it on your own library before trusting it.",
-    "Vocal": "instrumental / estribillo / vocal.\n"
-             "'(tag)' means the filename said 'instrumental' and that was "
-             "used instead of the audio. '?' marks a close audio call.\n"
-             "From syllabic (2.5–7.5 Hz) modulation with the beat grid "
-             "notched out. Separates the example corpus at d′≈2.0; a "
-             "cantabile instrumental solo can still read as a singer.",
+    # "Vocal" is disabled — see compas_core/analyze.py for why.
     "Status": "pending → queued → analyzing → done.\n"
               "A track that failed shows its error message here instead; "
               "hovering it gives the full text.",
@@ -184,22 +208,67 @@ def _wrap(text: str, width: int = 64) -> str:
         # i.e. the bulleted lists — flowing prose stays flush left.
         out.append(textwrap.fill(
             para.strip(), width=width, initial_indent=indent,
-            subsequent_indent=indent + "  " if indent else ""))
+            subsequent_indent=indent + "  " if indent else "",
+            # These wrap Windows paths and exception text as often as prose,
+            # and chopping "C:\Users\…\Di Sarli" mid-token to hit column 64
+            # makes it unreadable. Better one over-long line than a broken
+            # path.
+            break_long_words=False, break_on_hyphens=False))
     return "\n".join(out)
 
 
 COLUMN_TOOLTIPS = {header: _wrap(help_) for header, help_ in _COLUMN_HELP.items()}
 
+# Every _COLUMN_HELP entry is written as "one-line definition\ndetail…", so the
+# first line is a ready-made short form. Headers get the essay; cells — which
+# the user sweeps across by the dozen while comparing tracks — get one line.
+COLUMN_SUMMARIES = {header: _wrap(help_.split("\n")[0])
+                    for header, help_ in _COLUMN_HELP.items()}
+
+
+# Painted header for columns whose full name is too wide to spend on a
+# two-to-five character number. The full name stays in the Columns menu, the
+# tooltip and Help ▸ What the columns mean.
+_SHORT_HEADERS = {
+    "BPM range": "BPM ±",
+    "Bars/min": "Bars",
+    "Stability": "Stab",
+    "Camelot": "Cam",
+    "Tag BPM/key": "Tags",
+    "Texture": "Tex",
+    "Harmony": "Harm",
+    "LRA (LU)": "LRA",
+}
+
+# Facet axis names are domain vocabulary and used by the CLI, so they are
+# abbreviated only for painting, keyed on the axis name.
+_SHORT_AXIS_NAMES = {
+    "Character": "Char",
+    "Articulation": "Artic",
+    "Placement": "Place",
+    "Phrasing": "Phras",
+    "Dynamics": "Dyn",
+    "Harmony": "Harm",
+    "Texture": "Tex",
+}
+
 
 def _metric_columns() -> list[Column]:
-    def col(header: str, display, sort, numeric: bool = False) -> Column:
+    def col(header: str, display, sort, numeric: bool = False,
+            sinks_pending: bool = True, searchable: bool = False) -> Column:
         return Column(header, display, sort, numeric,
-                      COLUMN_TOOLTIPS.get(header, ""))
+                      COLUMN_TOOLTIPS.get(header, ""),
+                      COLUMN_SUMMARIES.get(header, ""),
+                      sinks_pending=sinks_pending,
+                      short=_SHORT_HEADERS.get(header, ""),
+                      searchable=searchable)
 
     return [
-        col("File", lambda r: r.path.name, lambda r: r.path.name.lower()),
+        col("File", lambda r: r.path.name, lambda r: r.path.name.lower(),
+            sinks_pending=False, searchable=True),
         col("Rhythm", _rhythm_label,
-            lambda r: r.analysis.rhythm if r.analysis else ""),
+            lambda r: r.analysis.rhythm if r.analysis else "",
+            searchable=True),
         col("BPM", lambda r: _a(r, "bpm", "{:.1f}"),
             lambda r: _num(r, "bpm"), True),
         col("BPM range",
@@ -212,11 +281,14 @@ def _metric_columns() -> list[Column]:
         col("Stability", lambda r: _a(r, "stability", "{:.0f}"),
             lambda r: _num(r, "stability"), True),
         col("Timing", lambda r: _a(r, "timing"),
-            lambda r: r.analysis.timing if r.analysis else ""),
+            lambda r: r.analysis.timing if r.analysis else "",
+            searchable=True),
         col("Key", lambda r: _a(r, "key"),
-            lambda r: r.analysis.key if r.analysis else ""),
+            lambda r: r.analysis.key if r.analysis else "",
+            searchable=True),
         col("Camelot", lambda r: _a(r, "camelot"),
-            lambda r: r.analysis.camelot if r.analysis else ""),
+            lambda r: r.analysis.camelot if r.analysis else "",
+            searchable=True),
         col("Tag BPM/key",
             lambda r: (" · ".join(x for x in (r.analysis.tag_bpm,
                                               r.analysis.tag_key) if x)
@@ -234,8 +306,9 @@ def _metric_columns() -> list[Column]:
             lambda r: _num(r, "percussiveness"), True),
         col("Harmony", lambda r: _a(r, "harmonic_variety", "{:.0f}"),
             lambda r: _num(r, "harmonic_variety"), True),
-        col("Vocal", _vocal_label,
-            lambda r: r.analysis.vocal if r.analysis else ""),
+        # Vocal presence disabled — see compas_core/analyze.py for why.
+        # col("Vocal", _vocal_label,
+        #     lambda r: r.analysis.vocal if r.analysis else ""),
         col("LUFS", lambda r: _opt(r, "lufs", "{:.1f}"),
             lambda r: (r.analysis.lufs if r.analysis
                        and r.analysis.lufs is not None else -999), True),
@@ -250,9 +323,16 @@ METRIC_HEADERS = [c.header for c in METRIC_COLUMNS]
 
 _STATUS_COLUMN = Column(
     "Status",
-    lambda r: r.error if r.status == "error" else r.status,
+    # Just the state word. It used to substitute the whole exception string,
+    # which cannot survive in a column narrow enough to sit at the left edge
+    # — the message is on the tooltip, and View ▸ Show only failed tracks
+    # collects the rows it applies to.
+    lambda r: r.status,
     lambda r: r.status,
     tooltip=COLUMN_TOOLTIPS["Status"],
+    summary=COLUMN_SUMMARIES["Status"],
+    sinks_pending=False,
+    searchable=True,
 )
 
 
@@ -270,13 +350,22 @@ def _facet_column(axis: facets.Axis, vocabulary: str) -> Column:
             lvl if (lvl := facets.axis_level(ax, r.analysis)) is not None
             else -1),
         tooltip=tip,
+        summary=_wrap(f"{levels} — {axis.help.split('.')[0]}."),
         facet=True,
+        short=(FACET_PREFIX + _SHORT_AXIS_NAMES[axis.name]
+               if axis.name in _SHORT_AXIS_NAMES else ""),
+        searchable=True,
     )
 
 
 def build_columns(axis_keys, vocabulary: str) -> list[Column]:
-    """Metric columns, then one column per selected axis, then Status."""
-    columns = list(METRIC_COLUMNS)
+    """File, Status, the remaining metrics, then one column per selected axis.
+
+    Status sits second rather than last because it is the run's only per-row
+    feedback, and at the far right of a twenty-column table it spent the whole
+    analysis off the edge of the viewport.
+    """
+    columns = [METRIC_COLUMNS[0], _STATUS_COLUMN, *METRIC_COLUMNS[1:]]
     axes = facets.resolve_axes(axis_keys)
     columns.extend(_facet_column(a, vocabulary) for a in axes)
     if axes:
@@ -294,16 +383,19 @@ def build_columns(axis_keys, vocabulary: str) -> list[Column]:
                 "steady instrumental'.\n\n"
                 "Choose the axes and the vocabulary in the Facets menu. "
                 "Write tags… can put this phrase in a COMPAS_FACETS tag."),
+            summary=_wrap("The selected facets composed into one phrase, "
+                          "skipping any axis on which the track is "
+                          "unremarkable."),
             facet=True,
+            searchable=True,
         ))
-    columns.append(_STATUS_COLUMN)
     return columns
 
 
 def _cell_note(row: TrackRow, header: str) -> str | None:
     """Row-specific detail shown under the column's explanation."""
     if header == "File":
-        return str(row.path)
+        return _wrap(str(row.path))
     a = row.analysis
     if a is None:
         return None
@@ -326,15 +418,72 @@ def _cell_note(row: TrackRow, header: str) -> str | None:
     if header == "Harmony":
         return (f"This track: effective rank {a.raw_eff_rank:.2f}, "
                 f"chord change {a.raw_chord_change:.3f}/beat")
-    if header == "Vocal":
-        if a.vocal_source == "title":
-            return _wrap("This track: the filename says 'instrumental', so "
-                         f"that was used. The audio scored "
-                         f"{a.vocal_score:.1f}.")
-        return _wrap(f"This track: score {a.vocal_score:.1f}, singing over "
-                     f"{a.vocal_fraction*100:.0f}% of the track, confidence "
-                     f"{a.vocal_confidence:.2f}")
+    # Vocal presence disabled — see compas_core/analyze.py for why.
+    # if header == "Vocal":
+    #     if a.vocal_source == "title":
+    #         return _wrap("This track: the filename says 'instrumental', so "
+    #                      f"that was used. The audio scored "
+    #                      f"{a.vocal_score:.1f}.")
+    #     return _wrap(f"This track: score {a.vocal_score:.1f}, singing over "
+    #                  f"{a.vocal_fraction*100:.0f}% of the track, confidence "
+    #                  f"{a.vocal_confidence:.2f}")
     return None
+
+
+class TrackSortProxy(QSortFilterProxyModel):
+    """Sorts on Qt.UserRole, sinks unanalyzed rows, and filters the list.
+
+    Missing values are stored as magic lows (-1 for most metrics, -999 for
+    LUFS, -1 for facet levels), so an *ascending* sort on any metric used to
+    open with a screenful of blank rows — during a partial run that is every
+    track still queued, i.e. most of them. Sinking them instead means the
+    numbers you sorted for are the ones at the top, in both directions.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setSortRole(Qt.UserRole)
+        self._needle = ""
+        self._failed_only = False
+
+    # --- filtering ---------------------------------------------------------
+    def set_needle(self, text: str) -> None:
+        needle = text.strip().lower()
+        if needle != self._needle:
+            self._needle = needle
+            self.invalidateFilter()
+
+    def set_failed_only(self, on: bool) -> None:
+        if on != self._failed_only:
+            self._failed_only = on
+            self.invalidateFilter()
+
+    def is_filtered(self) -> bool:
+        return bool(self._needle) or self._failed_only
+
+    def filterAcceptsRow(self, source_row: int, parent=QModelIndex()) -> bool:
+        model = self.sourceModel()
+        if model is None or not 0 <= source_row < len(model.rows):
+            # Reached transiently while the source model is resetting.
+            return False
+        if self._failed_only and model.rows[source_row].status != "error":
+            return False
+        if not self._needle:
+            return True
+        return self._needle in model.search_text(source_row)
+
+    def lessThan(self, left, right) -> bool:
+        model = self.sourceModel()
+        column = model.columns[left.column()]
+        if column.sinks_pending:
+            l_empty = model.rows[left.row()].analysis is None
+            r_empty = model.rows[right.row()].analysis is None
+            if l_empty != r_empty:
+                # Inverted for a descending sort, since Qt reverses the result
+                # — otherwise "pending last" would just become "pending first"
+                # the moment the header was clicked twice.
+                return l_empty == (self.sortOrder() == Qt.DescendingOrder)
+        return super().lessThan(left, right)
 
 
 class TrackTableModel(QAbstractTableModel):
@@ -365,9 +514,18 @@ class TrackTableModel(QAbstractTableModel):
         if orientation != Qt.Horizontal or not 0 <= section < len(self.columns):
             return None
         if role == Qt.DisplayRole:
-            return self.columns[section].header
+            return self.columns[section].label
         if role == Qt.ToolTipRole:
-            return self.columns[section].tooltip or None
+            column = self.columns[section]
+            # An abbreviated header has to say what it stands for, above the
+            # explanation of what it measures.
+            if column.short:
+                return f"{column.header}\n\n{column.tooltip}".strip()
+            return column.tooltip or None
+        # Numeric cells are right-aligned; without this the header sits to
+        # the left of its own column of numbers.
+        if role == Qt.TextAlignmentRole and self.columns[section].numeric:
+            return int(Qt.AlignRight | Qt.AlignVCenter)
         return None
 
     def data(self, index, role=Qt.DisplayRole):
@@ -388,9 +546,29 @@ class TrackTableModel(QAbstractTableModel):
         if role == Qt.ToolTipRole:
             if column.header == "Status" and row.status == "error":
                 return _wrap(row.error)
-            parts = [column.tooltip, _cell_note(row, column.header)]
+            # The one-line summary, not the full essay: the header carries the
+            # long form, and this fires on every cell the mouse crosses while
+            # the user is comparing numbers across twenty columns.
+            parts = [column.summary or column.tooltip,
+                     _cell_note(row, column.header)]
             return "\n\n".join(p for p in parts if p) or None
         return None
+
+    # --- filtering ----------------------------------------------------------
+    def search_text(self, i: int) -> str:
+        """Lowercase haystack for the filter box.
+
+        Only the columns worth typing at — the filename, the rhythm, the key,
+        the status and every facet reading. Numbers are left out: a search for
+        "44" that matches Sync, Artic and a year in the filename is noise.
+        Includes the error message, so filtering on "ffmpeg" finds the rows
+        that failed for that reason.
+        """
+        row = self.rows[i]
+        parts = [c.display(row) for c in self.columns if c.searchable]
+        if row.error:
+            parts.append(row.error)
+        return " ".join(parts).lower()
 
     # --- mutation helpers ---------------------------------------------------
     def add_paths(self, paths: list[Path]) -> None:

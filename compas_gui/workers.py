@@ -14,6 +14,34 @@ class WorkerSignals(QObject):
     failed = Signal(int, int, str)    # generation, row, message
 
 
+class ScanSignals(QObject):
+    scanned = Signal(int, object)     # generation, list[Path]
+
+
+class ScanTask(QRunnable):
+    """Walk dropped paths for audio files, off the UI thread.
+
+    rglob over a music library is slow enough to matter — and under OneDrive
+    it can touch cloud placeholders — so doing it inline blocked the event
+    loop past Windows' ~5 s ghosting threshold and the window went
+    "(Not Responding)" on a big drop.
+    """
+
+    def __init__(self, generation: int, paths, collect, signals) -> None:
+        super().__init__()
+        self.generation = generation
+        self.paths = paths
+        self.collect = collect
+        self.signals = signals
+
+    def run(self) -> None:
+        try:
+            files = self.collect(self.paths)
+        except Exception:  # noqa: BLE001 — an unreadable tree is not fatal
+            files = []
+        self.signals.scanned.emit(self.generation, files)
+
+
 class AnalyzeTask(QRunnable):
     def __init__(self, generation: int, row: int, path: Path,
                  rhythm: str, signals: WorkerSignals,

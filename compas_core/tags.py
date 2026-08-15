@@ -26,8 +26,6 @@ class FileTags:
 def _existing_analysis(path: str) -> tuple[str | None, str | None]:
     """Existing BPM / initial-key tags from other tools, if any."""
     import mutagen
-    from mutagen.id3 import ID3FileType
-    from mutagen.mp4 import MP4
 
     try:
         raw = mutagen.File(path)
@@ -47,13 +45,17 @@ def _existing_analysis(path: str) -> tuple[str | None, str | None]:
         text = str(getattr(val, "text", [val])[0] if hasattr(val, "text") else val)
         return text.strip() or None
 
-    if isinstance(raw, MP4):
+    # Same dispatch as the writer — AIFF and WAVE hold ID3 without being
+    # ID3FileType subclasses, so testing for that alone silently returned
+    # None for both formats even when the tags were there.
+    flavour = _tag_flavour(raw)
+    if flavour == "mp4":
         bpm = first(raw.tags, "tmpo")
         key = first(raw.tags, "----:com.apple.iTunes:initialkey")
         if key is not None:
             key = key.strip("b'\"")
         return bpm, key
-    if isinstance(raw, ID3FileType):
+    if flavour == "id3":
         return first(raw.tags, "TBPM"), first(raw.tags, "TKEY")
     # Vorbis-comment style (FLAC/OGG): case-insensitive flat keys
     return first(raw, "bpm"), first(raw, "initialkey")
@@ -87,6 +89,46 @@ def read_tags(path: str | Path) -> FileTags:
 _ENERGY_MARK = re.compile(r"\s*(\||-)?\s*COMPAS Energy \d+(\.\d+)?", re.IGNORECASE)
 
 
+def _tag_flavour(mf) -> str | None:
+    """``'vorbis'`` / ``'mp4'`` / ``'id3'``, or None if we must not write.
+
+    Dispatch on mutagen's real types. An earlier version tested
+    ``mf.tags.__class__.__name__ == "VCommentDict"``, which is the class
+    name FLAC happens to use; Ogg's is ``OggVCommentDict`` and FLAC's is in
+    fact ``VCFLACDict``, so every Ogg file fell through to the ID3 branch
+    and had a bare ID3 block prepended to its container -- which destroys
+    it. AIFF and WAV were corrupted the same way. Both are subclasses of
+    ``VCommentDict``, so an isinstance test is both correct and open to the
+    rest of the Ogg family.
+    """
+    from mutagen._vorbis import VCommentDict
+    from mutagen.aiff import AIFF
+    from mutagen.flac import FLAC
+    from mutagen.id3 import ID3, ID3FileType
+    from mutagen.mp4 import MP4
+    from mutagen.wave import WAVE
+
+    tags = getattr(mf, "tags", None)
+    if isinstance(mf, MP4):
+        return "mp4"
+    if isinstance(mf, FLAC) or isinstance(tags, VCommentDict):
+        return "vorbis"
+    # AIFF and WAVE carry ID3 but are plain FileTypes, not ID3FileType
+    # subclasses, so they need naming explicitly.
+    if isinstance(mf, (ID3FileType, AIFF, WAVE)) or isinstance(tags, ID3):
+        return "id3"
+    # An Ogg file with no comment block yet has tags=None, so the isinstance
+    # test above cannot see it.
+    if type(mf).__module__.startswith("mutagen.ogg"):
+        return "vorbis"
+    return None
+
+
+def _ensure_tags(mf) -> None:
+    if mf.tags is None:
+        mf.add_tags()
+
+
 def append_energy_comment(path: str | Path, energy: float) -> None:
     """Append/refresh a ``COMPAS Energy N`` note in the COMMENT tag.
 
@@ -95,36 +137,36 @@ def append_energy_comment(path: str | Path, energy: float) -> None:
     the comment column). A previous COMPAS marker is updated in place.
     """
     import mutagen
-    from mutagen.flac import FLAC
-    from mutagen.id3 import COMM, ID3
-    from mutagen.mp4 import MP4
+    from mutagen.id3 import COMM
 
     note = f"COMPAS Energy {energy:g}"
     path = str(path)
     mf = mutagen.File(path)
+    if mf is None:
+        raise RuntimeError(f"Unsupported file for tag writing: {path}")
+    flavour = _tag_flavour(mf)
+    if flavour is None:
+        raise RuntimeError(
+            f"Tag writing is not supported for {type(mf).__name__} files "
+            f"({path}). Refusing rather than risk corrupting it.")
+    _ensure_tags(mf)
 
     def merged(existing: str) -> str:
         base = _ENERGY_MARK.sub("", existing).rstrip()
         return f"{base} | {note}" if base else note
 
-    if isinstance(mf, FLAC):
+    if flavour == "vorbis":
         existing = str(mf.get("COMMENT", [""])[0])
         mf["COMMENT"] = [merged(existing)]
-        mf.save()
-    elif isinstance(mf, MP4):
+    elif flavour == "mp4":
         existing = (mf.tags or {}).get("\xa9cmt", [""])
         mf["\xa9cmt"] = [merged(str(existing[0]) if existing else "")]
-        mf.save()
     else:
-        try:
-            id3 = ID3(path)
-        except Exception:
-            id3 = ID3()
-        frames = id3.getall("COMM")
+        frames = mf.tags.getall("COMM")
         existing = str(frames[0].text[0]) if frames and frames[0].text else ""
-        id3.setall("COMM", [COMM(encoding=3, lang="eng", desc="",
-                                 text=[merged(existing)])])
-        id3.save(path)
+        mf.tags.setall("COMM", [COMM(encoding=3, lang="eng", desc="",
+                                     text=[merged(existing)])])
+    mf.save()
 
 
 def write_tags(
@@ -142,9 +184,7 @@ def write_tags(
     is handled here.
     """
     import mutagen
-    from mutagen.flac import FLAC
-    from mutagen.id3 import ID3, TBPM, TKEY, TXXX
-    from mutagen.mp4 import MP4
+    from mutagen.id3 import COMM, TBPM, TKEY, TXXX
 
     path = str(path)
     mf = mutagen.File(path)
@@ -161,12 +201,18 @@ def write_tags(
     if not selected:
         return
 
-    if isinstance(mf, FLAC) or hasattr(mf, "tags") and mf.tags.__class__.__name__ == "VCommentDict":
-        # Vorbis comments (FLAC/OGG): flat key=value, exactly our canonical form
+    flavour = _tag_flavour(mf)
+    if flavour is None:
+        raise RuntimeError(
+            f"Tag writing is not supported for {type(mf).__name__} files "
+            f"({path}). Refusing rather than risk corrupting it.")
+    _ensure_tags(mf)
+
+    if flavour == "vorbis":
+        # FLAC and the Ogg family: flat key=value, exactly our canonical form
         for k, v in selected.items():
             mf[k] = [v]
-        mf.save()
-    elif isinstance(mf, MP4):
+    elif flavour == "mp4":
         for k, v in selected.items():
             if k == "BPM":
                 mf["tmpo"] = [int(round(float(v)))]
@@ -176,18 +222,20 @@ def write_tags(
                 mf["\xa9cmt"] = [v]
             else:
                 mf[f"----:com.apple.iTunes:{k}"] = [v.encode()]
-        mf.save()
     else:
-        # Assume ID3 (MP3, AIFF, ...)
-        try:
-            id3 = ID3(path)
-        except Exception:
-            id3 = ID3()
+        # ID3 (MP3, AIFF, WAV, ...). Write through the container's own tag
+        # object and save the container: ID3(path).save(path) writes a bare
+        # ID3 block at the head of the file, which is right for MP3 and
+        # wrecks AIFF and WAV, where the ID3 belongs inside a chunk.
         for k, v in selected.items():
             if k == "BPM":
-                id3.setall("TBPM", [TBPM(encoding=3, text=[v])])
+                mf.tags.setall("TBPM", [TBPM(encoding=3, text=[v])])
             elif k == "INITIALKEY":
-                id3.setall("TKEY", [TKEY(encoding=3, text=[v])])
+                mf.tags.setall("TKEY", [TKEY(encoding=3, text=[v])])
+            elif k == "COMMENT":
+                mf.tags.setall("COMM", [COMM(encoding=3, lang="eng", desc="",
+                                             text=[v])])
             else:
-                id3.setall(f"TXXX:{k}", [TXXX(encoding=3, desc=k, text=[v])])
-        id3.save(path)
+                mf.tags.setall(f"TXXX:{k}",
+                               [TXXX(encoding=3, desc=k, text=[v])])
+    mf.save()

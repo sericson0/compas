@@ -1,8 +1,7 @@
 # COMPAS — Tango Music Analyzer
 
 Musical feature analysis for Argentine tango DJs and dancers: **BPM, key,
-energy, rubato, articulation, texture and voice** for tango, vals, and
-milonga, with a GUI, a CLI, tag-based integration with VirtualDJ (or any DJ
+energy, rubato, articulation and texture** for tango, vals, and milonga, with a GUI, a CLI, tag-based integration with VirtualDJ (or any DJ
 software that reads tags), and a **facet grid** that turns the numbers into
 words in English or tango vocabulary.
 
@@ -10,7 +9,7 @@ words in English or tango vocabulary.
 
 | Metric | Meaning |
 |---|---|
-| **BPM** | Median beat-level tempo. The rhythm type constrains the plausible range, so a vals lands at ~178 quarter-note BPM instead of a half/double-tempo error. |
+| **BPM** | Median beat-level tempo. The rhythm type constrains the plausible range, so a vals lands at ~205 quarter-note BPM instead of a half/double-tempo error. |
 | **BPM range** | 10th–90th percentile of the *local* tempo across the song. For steady orchestras this is a couple of BPM wide; for late Pugliese it is the honest answer where a single BPM would be a lie. |
 | **Bars/min** | BPM ÷ beats per bar (tango 4/4, vals 3/4, milonga 2/4). Vals is often compared in bars/min. |
 | **Stability (0–100)** | How steady the tempo is, measured on the *detrended* local-tempo curve — a gradual accelerando (routine in valses) still counts as a fixed groove; only local push-pull (rubato) lowers it. Drives the **fixed / flexible** verdict (threshold 70 for tango/milonga, 50 for vals). |
@@ -21,7 +20,6 @@ words in English or tango vocabulary.
 | **Artic (0–100)** | Articulation: how detached the playing is — attack sharpness plus how far each note falls away before the next. Measured in fixed 50/140 ms windows so it is not a restatement of tempo. Related to drive (r = 0.73) but not the same: Victor's *Temo* marks the compás firmly (drive 61) with the softest attacks in the corpus (artic 5). |
 | **Texture (0–100)** | Percussive versus sustained, from the anisotropy of the spectrogram — percussive energy changes fast in time and slowly in frequency, harmonic energy the reverse. Effectively **independent of drive (r = 0.06)**, so it is a genuinely new axis rather than a restatement. |
 | **Harmony (0–100)** | How many distinct harmonies the piece uses. **Provisional** — the least validated number here; see [Harmonic complexity](#harmonic-complexity-read-this-one-sceptically). |
-| **Voice** | `instrumental` / `estribillo` / `vocal`. Taken from the filename when it says "Instrumental", otherwise estimated from syllabic modulation with the beat grid notched out. See [Vocal presence](#vocal-presence). |
 | **LUFS** | EBU R128 integrated loudness — the number to match levels on across a set. |
 | **LRA (LU)** | EBU R128 loudness range: the standardised dynamic-range measure. Note that K-weighting boosts above 2 kHz, exactly where shellac surface noise lives, so LRA reads low on noisy transfers; relative ordering stays meaningful, absolute values are not comparable to a modern master. |
 
@@ -59,32 +57,30 @@ BPM/key" column) when present.
 ### Results on the example corpus
 
 ```
-                                       rhythm      bpm stab  key enrg drv snc art tex hrm voice          LRA
-Biagi - El Incendio - 1938             tango     130.8   95   Am  7.0  99  19  95  63  12 instrumental*  5.7
-Canaro - Hotel Victoria - 1935         tango     119.5   95   D#  5.0  73  43  48  33  35 instrumental*  4.6
-D'Arienzo - Amarras - 1944             tango     122.4   86    A  4.6   6  47  23  58  49 vocal          7.0
-D'Arienzo - El Flete - 1936            tango     133.1   94    E  6.3  78  40  83  48  67 instrumental*  6.7
-Di Sarli - El Amanecer - 1942          tango     123.0   95    G  4.7  18  57  36  36  69 instrumental* 10.9
-Di Sarli - Nada - 1944                 tango     121.6   73    C  3.4   7  52  23  62  47 vocal          7.0
-Donato - Carnaval De Mi Barrio - 1939  tango     136.5   94   Bm  6.4  75  37  72  72  41 vocal          5.8
-Malerba - Gitana Rusa - 1942           tango     117.9   79    A  3.7  33  25  48  78  23 vocal          7.1
-Pugliese - Alma De Bohemio - 1958      tango     122.3   48   Am  4.4  33  49  23  40  68 instrumental* 12.2
-Pugliese - El Adios - 1963             tango     123.3   47   Dm  3.9  16  46  33  78  38 vocal         13.2
-Troilo - Danzarin - 1963               tango     124.5   52    G  3.7  21  45  24  28  63 instrumental*  7.0
-Troilo - Toda Mi Vida - 1941           tango     132.5   92    A  5.5  38  50  69  62  55 vocal          8.3
-De Angelis - Mi Novia De Ayer - 1944   vals      213.8   90   A#  6.0  47  40  23  59  33 vocal          5.1
-Laurenz - Paisaje - 1943               vals      210.6   81    A  5.2  43  34  30  61  66 vocal          6.0
-Rodriguez - Tengo Mil Novias - 1939    vals      203.5   93    G  5.8  75  19  62  73  37 vocal          5.9
-Victor - Temo - 1940                   vals      219.3   90   Am  5.7  61  43  17  47  45 vocal          5.1
-Canaro - Silueta Portena - 1936        milonga   112.9   84  D#m  5.8  61  27  38  39  33 vocal          5.5
-D'Arienzo - Milonga Del Corazon - 1938 milonga   108.8   83    G  5.1  18  64  20  57  65 vocal          7.1
-Laurenz - Milonga De Mis Amores - 1944 milonga   103.8   89    A  4.7  13  64  28  46  45 instrumental*  5.8
+                                       rhythm      bpm stab  key enrg drv snc art tex hrm   LRA
+Biagi - El Incendio - 1938             tango     130.8   95   Am  7.0  99  19  95  63  12   5.7
+Canaro - Hotel Victoria - 1935         tango     119.5   95   D#  5.0  73  43  48  33  35   4.6
+D'Arienzo - Amarras - 1944             tango     122.4   86    A  4.6   6  47  23  58  49   7.0
+D'Arienzo - El Flete - 1936            tango     133.1   94    E  6.3  78  40  83  48  67   6.7
+Di Sarli - El Amanecer - 1942          tango     123.0   95    G  4.7  18  57  36  36  69  10.9
+Di Sarli - Nada - 1944                 tango     121.6   73    C  3.4   7  52  23  62  47   7.0
+Donato - Carnaval De Mi Barrio - 1939  tango     136.5   94   Bm  6.4  75  37  72  72  41   5.8
+Malerba - Gitana Rusa - 1942           tango     117.9   79    A  3.7  33  25  48  78  23   7.1
+Pugliese - Alma De Bohemio - 1958      tango     122.3   48   Am  4.4  33  49  23  40  68  12.2
+Pugliese - El Adios - 1963             tango     123.3   47   Dm  3.9  16  46  33  78  38  13.2
+Troilo - Danzarin - 1963               tango     124.5   52    G  3.7  21  45  24  28  63   7.0
+Troilo - Toda Mi Vida - 1941           tango     132.5   92    A  5.5  38  50  69  62  55   8.3
+De Angelis - Mi Novia De Ayer - 1944   vals      213.8   90   A#  6.0  47  40  23  59  33   5.1
+Laurenz - Paisaje - 1943               vals      210.6   81    A  5.2  43  34  30  61  66   6.0
+Rodriguez - Tengo Mil Novias - 1939    vals      203.5   93    G  5.8  75  19  62  73  37   5.9
+Victor - Temo - 1940                   vals      219.3   90   Am  5.7  61  43  17  47  45   5.1
+Canaro - Silueta Portena - 1936        milonga   112.9   84  D#m  5.8  61  27  38  39  33   5.5
+D'Arienzo - Milonga Del Corazon - 1938 milonga   108.8   83    G  5.1  18  64  20  57  65   7.1
+Laurenz - Milonga De Mis Amores - 1944 milonga   103.8   89    A  4.7  13  64  28  46  45   5.8
 ```
 
-`*` = taken from the filename. BPM range, timing and LUFS are omitted here
-for width; the CLI and GUI show them all. All nineteen voice calls are
-correct, which is a pleasant result and — as [Vocal
-presence](#vocal-presence) explains at length — not a representative one.
+BPM range, timing and LUFS are omitted here for width; the CLI and GUI show
+them all.
 
 Sanity checks worth noticing:
 
@@ -121,21 +117,21 @@ compare over from the **Facets ▾** menu (or `--facet-axes` on the CLI); each
 one adds a `≡` column, and a `Facets` column composes them into a phrase.
 
 ```
-Biagi - El Incendio - 1938             fast driving instrumental      rapido ritmico instrumental
-Pugliese - El Adios - 1963             smooth flexible vocal          melodico fraseo cantado
-Troilo - Danzarin - 1963               smooth flexible instrumental   melodico fraseo instrumental
-Canaro - Hotel Victoria - 1935         slow driving instrumental      lento ritmico instrumental
-Laurenz - Milonga De Mis Amores - 1944 slow smooth instrumental       lento melodico instrumental
+Biagi - El Incendio - 1938             fast driving            rápido rítmico
+Canaro - Hotel Victoria - 1935         slow driving            lento rítmico
+Pugliese - El Adios - 1963             flexible                fraseo
+Troilo - Danzarin - 1963               flexible                fraseo
+Laurenz - Milonga De Mis Amores - 1944 slow smooth             lento melódico
 ```
 
 The same tracks with articulation and texture switched on as well:
 
 ```
-Biagi - El Incendio - 1938             fast driving staccato percussive instrumental
-Pugliese - El Adios - 1963             smooth legato percussive flexible vocal
-Troilo - Danzarin - 1963               smooth legato sustained flexible instrumental
-Canaro - Hotel Victoria - 1935         slow driving sustained instrumental
-Laurenz - Milonga De Mis Amores - 1944 slow smooth legato instrumental
+Biagi - El Incendio - 1938             fast driving staccato
+Canaro - Hotel Victoria - 1935         slow driving sustained
+Pugliese - El Adios - 1963             percussive flexible
+Troilo - Danzarin - 1963               legato sustained flexible
+Laurenz - Milonga De Mis Amores - 1944 slow smooth
 ```
 
 The composed label skips any axis on which a track is unremarkable, so it
@@ -144,16 +140,15 @@ steady instrumental". The per-axis columns still show every level.
 
 | Axis | English | Tango | From |
 |---|---|---|---|
-| Tempo * | slow / medium / fast | lento / medio / rapido | BPM ÷ the rhythm's typical BPM |
-| Character * | smooth / balanced / driving | melodico / mixto / ritmico | Drive |
+| Tempo * | slow / medium / fast | lento / medio / rápido | BPM ÷ the rhythm's typical BPM |
+| Character * | smooth / balanced / driving | melódico / intermedio / rítmico | Drive |
 | Articulation | legato / detached / staccato | ligado / medio / picado | Artic |
-| Texture | sustained / mixed / percussive | lirico / equilibrado / percusivo | Texture |
+| Texture | sustained / mixed / percussive | lírico / equilibrado / percusivo | Texture |
 | Placement | straight / mixed / syncopated | liso / medio / sincopado | Sync |
-| Phrasing * | steady / flexible | compas / fraseo | Timing |
-| Voice * | instrumental / refrain / vocal | instrumental / estribillo / cantado | Voice |
+| Phrasing * | steady / flexible | compás / fraseo | Timing |
 | Harmony | simple / moderate / complex | directo / elaborado / complejo | Harmony |
-| Lift | gentle / moderate / lively | suave / medio / energico | Energy |
-| Dynamics | even / dynamic / dramatic | parejo / dinamico / dramatico | LRA |
+| Lift | gentle / moderate / lively | suave / medio / enérgico | Energy |
+| Dynamics | even / dynamic / dramatic | parejo / dinámico / dramático | LRA |
 | Mode | major / minor | mayor / menor | Key |
 
 `*` = on by default. Tempo is deliberately **genre-relative**, so a vals at
@@ -172,7 +167,21 @@ Two things worth being clear about:
    post-war material — will want its own; see
    [Calibrating on your own library](#calibrating-on-your-own-library).
 
-## Vocal presence
+## Vocal presence (currently DISABLED)
+
+> **This feature is switched off.** It is commented out in
+> `compas_core/analyze.py`, `facets.py`, `compas_gui/model.py` and
+> `compas_cli.py` — each site marked the same way — while
+> `compas_core/vocal.py` and its two scripts stay intact. The reason is the
+> table below: it only earns its keep on tango from 1940-1959, and on vals
+> and milonga it does not beat guessing the majority class. Since a library
+> that marks instrumentals in the filename already knows the answer for
+> those, it was not paying for its 0.12 s/track. The write-up is kept
+> because the negative results in it are the useful part.
+>
+> To switch it back on, uncomment the five `TrackAnalysis` fields in
+> `analyze.py` and follow the four matching notes.
+
 
 Instrumental / estribillo / vocal is the thing tanda building actually turns
 on, and it is the one metric here with free ground truth: a library that
@@ -344,6 +353,12 @@ any partial CSV is a representative sample of the library rather than
 everything alphabetically before "Canaro" — which is what makes it possible
 to calibrate off a partial run instead of waiting hours for the end.
 
+The GUI is resumable too now (it autosaves results as they land and restores
+them on the next launch), so it is a reasonable way to work through a large
+library in sittings. `analyze_library.py` is still the right tool when the
+goal is *calibration* specifically, for the shuffling: it is the only one of
+the three that makes a partial run representative.
+
 `calibrate_facets.py` works in two steps, and the order matters:
 
 1. **Anchors** — the constants that map a raw measurement onto 0–100. Too
@@ -409,20 +424,53 @@ C:\Users\seric\.venvs\compas\Scripts\python -m compas_gui
 - Pick a rhythm mode (or leave `auto`) and press **Analyze** (or Ctrl+Enter).
 - **Fast** trades key accuracy for speed on large batches — see
   [Analysis speed](#analysis-speed).
-- **Columns ▾** lets you check/uncheck which metrics are shown; the choice is
-  remembered between sessions. Hover any column header for what it means.
+- **Columns ▾** shows or hides any column, metric or facet; the choice is
+  remembered between sessions. Hover any column header for what it means, or
+  read them all in **Help ▸ What the columns mean**. Seven secondary columns
+  (`BPM range`, `Bars/min`, `Camelot`, `Tag BPM/key`, `LUFS`, `LRA`, `Harmony`)
+  start hidden so the table fits a normal window; tick them back on here.
+  Window size and column widths are remembered too. Wide headers are painted
+  abbreviated (`Stab`, `Tex`, `≡ Char`); the full name is in the tooltip and
+  in the Columns menu. `Status` sits second so you can see the run's progress
+  without scrolling.
+- **Filter box** (Ctrl+F) narrows the list to matching tracks. It matches the
+  filename, rhythm, key, status, the facet readings and any error message, so
+  `milonga`, `Dm`, `driving` and `ffmpeg` all work. **View ▸ Show only failed
+  tracks** (Ctrl+Shift+F) collects the failures after a big run.
+  Filtering only changes what you see — Analyze and Write tags always act on
+  the whole list, and the status bar says so while a filter is active.
 - **Facets ▾** switches the vocabulary (English / Tango) and picks which axes
   to compare over. Each ticked axis adds a `≡` column you can sort on, plus a
   `Facets` column with the composed phrase. Both choices persist.
 - Right-click selected rows to re-analyze them as a specific rhythm or remove them.
 - **Write tags…** writes results into the files (only on request, never automatically):
   - `BPM` and `INITIALKEY` — the standard fields VirtualDJ imports from tags,
-  - `COMPAS_*` fields — energy, drive, articulation, texture, harmony, voice,
+  - `COMPAS_*` fields — energy, drive, articulation, texture, harmony,
     stability, timing, BPM range, bars/min,
   - `COMPAS_FACETS` — the composed phrase in the vocabulary and axes you
     currently have selected, which is the form worth browsing on in VirtualDJ,
   - optional `COMPAS Energy N` note **appended** to the comment (existing comment text is preserved).
-- **Export CSV / JSON** for the whole session.
+
+  The dialog names the files it is about to touch, and says how many of them
+  already carry a BPM or key tag from another tool — those two fields are the
+  only ones that overwrite anything. Untick them to leave a Mixed In Key
+  library alone. It acts on the selected tracks when the selection contains
+  analyzed ones, and on everything analyzed otherwise; the heading says which.
+- **Export CSV / JSON** for the whole session, including the facet columns and
+  the composed phrase.
+- **Your session is saved as it goes.** The track list and every result are
+  written to `%APPDATA%\compas\COMPAS\session.json` as each track finishes, and
+  restored on the next launch — closing the window mid-run no longer throws
+  away half an hour of analysis. Tracks that were still in flight come back as
+  pending, so Analyze picks up where it left off. *Clear all* discards the
+  saved session too (and asks first, if anything has been analyzed). Only the
+  measured numbers are stored: facet readings and the composed phrase are
+  recomputed on load, so recalibrated thresholds apply to old results.
+- **Long runs report a time estimate.** The status bar shows
+  `Analyzing… 143/500 done (4 in flight) · ≈12 min left`, measured from the
+  run's own recent throughput, with a progress bar beside it and the
+  percentage in the window title so a minimised window still says how far
+  along it is.
 
 ### Standalone executables (no Python needed)
 
@@ -456,8 +504,15 @@ python compas_cli.py song.flac --write-tags --key-format camelot
 
 python compas_cli.py . --list-axes                    # the facet axes
 python compas_cli.py my_folder --facets tango         # tango vocabulary
-python compas_cli.py my_folder --facet-axes tempo,drive,articulation,texture,vocal
+python compas_cli.py my_folder --facet-axes tempo,drive,articulation,texture
 python compas_cli.py my_folder --facets off           # numbers only
+
+# Tag writing is field-by-field, as in the GUI dialog. --no-bpm/--no-key keep
+# what Mixed In Key already wrote; --comment appends "COMPAS Energy N" to the
+# comment without touching the existing text.
+python compas_cli.py my_folder --write-tags --no-bpm --no-key
+python compas_cli.py my_folder --write-tags --no-bpm --no-key --comment
+python compas_cli.py my_folder --write-tags --no-compas --comment
 ```
 
 ## Analysis speed
@@ -474,16 +529,15 @@ Nearly all of the difference is one step. Harmonic/percussive separation is
 **~75% of a track's analysis time**, and the only things that read its output
 are the key estimate and harmonic variety — every other metric is computed
 from the full mix. Fast mode skips it and works from the full mix instead, so
-BPM, range, stability, timing, drive, sync, **articulation, texture, voice**,
+BPM, range, stability, timing, drive, sync, **articulation and texture**,
 energy and loudness are bit-identical either way; only Key, Camelot and
 Harmony can move.
 
-**The four new metrics cost 0.18 s/track between them** — 8% of fast mode, 2%
-of default — measured single-threaded on the example corpus:
+**The new metrics cost 0.06 s/track between them** — measured
+single-threaded on the example corpus:
 
 | stage | s/track |
 |---|---|
-| vocal presence | 0.12 |
 | texture + articulation | 0.05 |
 | harmonic variety | <0.01 |
 
@@ -520,7 +574,7 @@ compas_core/       analysis library (shared by GUI, CLI, and future plugin)
   energy.py        drive, syncopation, dynamic range, energy composite
   texture.py       articulation, melodic/percussive texture
   harmony.py       harmonic variety (provisional)
-  vocal.py         instrumental / estribillo / vocal
+  vocal.py         instrumental / estribillo / vocal (DISABLED)
   facets.py        axes, English + tango vocabularies, composed labels
   loudness.py      EBU R128 LUFS / LRA
   tags.py          tag read/write (FLAC, MP3, MP4)
@@ -568,5 +622,5 @@ Planned approach:
 - Tango is treated as 4/4, vals 3/4, milonga 2/4 (beat = quarter note).
   Sites like tango.info count tango in 2/4 bars, so their "bars/min" is 2×
   the value shown here; the beat-level BPM is convention-independent.
-- Beat-level tempo priors: tango 100–145, vals 150–215, milonga 85–135 BPM.
+- Beat-level tempo priors: tango 100–145, vals 155–235, milonga 85–135 BPM.
   Adjust in `compas_core/rhythm.py` if your collection disagrees.

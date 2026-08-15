@@ -21,15 +21,17 @@ and the singer's is not. We already know the tempo to a fraction of a BPM,
 so the metrical comb can simply be notched out of the modulation spectrum
 and whatever syllabic energy remains is the vocal evidence:
 
-1. 40 mel bands over 200-3000 Hz (vocal fundamentals through F2), log,
-   per-band mean removed.
+1. 40 mel bands over 150-2000 Hz -- the singer's fundamental through
+   F1/F2, and little else; above ~2 kHz a shellac transfer is mostly
+   surface noise. Log, per-band mean removed.
 2. Modulation spectrum of each band envelope over 14 s Hann windows.
    Long windows are not incidental -- at 6 s the modulation resolution is
    0.17 Hz and the notches eat most of the syllabic band with them.
 3. Notch +/-0.18 Hz around the beat rate and its multiples.
 4. Score = surviving 2.5-7.5 Hz energy over total 0.5-12 Hz energy, taken
-   as the 70th percentile over windows, because tango vocals arrive after
-   an instrumental introduction and a mean would dilute them.
+   as the 85th percentile over windows, because tango vocals arrive after
+   an instrumental introduction and a mean would dilute them -- and in the
+   estribillo era a singer may take only one refrain of a whole side.
 
 Validation status
 -----------------

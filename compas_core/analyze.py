@@ -21,7 +21,8 @@ from compas_core.rhythm import RHYTHM_SPECS, Rhythm, rhythm_from_genre
 from compas_core.tags import FileTags, read_tags
 from compas_core.tempo import HOP, analyze_tempo, compute_tempogram
 from compas_core.texture import analyze_texture
-from compas_core.vocal import analyze_vocal, vocal_hint_from_name
+# Vocal presence is disabled — see the TrackAnalysis fields for why.
+# from compas_core.vocal import analyze_vocal, vocal_hint_from_name
 
 # Below this margin between the best and runner-up rhythm hypothesis, the
 # audio-only guess is not trustworthy enough to act on silently.
@@ -71,11 +72,26 @@ class TrackAnalysis:
     percussiveness: float      # 0-100, high = percussive, low = sustained
     harmonic_variety: float    # 0-100, distinct harmonies used (provisional)
 
-    vocal: str                 # instrumental / estribillo / vocal
-    vocal_source: str          # title / audio
-    vocal_score: float         # 0-100, non-metrical syllabic modulation
-    vocal_fraction: float      # 0-1, share of the track that scores vocal
-    vocal_confidence: float    # 0-1; only meaningful when source == "audio"
+    # --- vocal presence: DISABLED ---------------------------------------
+    # Validated on an 11,948-track library and switched off there: d' 1.03
+    # / 80% overall against a 71% base rate, and the average flatters it.
+    # It reaches 91-93% only on tango from 1940-1959, and on vals and
+    # milonga it does not beat guessing the majority class at all (those
+    # repertoires are 84-85% vocal to begin with). Since the library already
+    # marks instrumentals in the filename, the detector was earning very
+    # little for its 0.12 s/track.
+    #
+    # compas_core/vocal.py is intact and still validated by
+    # scripts/validate_vocal.py. To switch it back on, uncomment the five
+    # fields here, the analyze_vocal() call in analyze_file(), the
+    # COMPAS_VOCAL tag field, the Voice axis in facets.py, and the Vocal
+    # column in compas_gui/model.py. All five sites are marked the same way.
+    #
+    # vocal: str                 # instrumental / estribillo / vocal
+    # vocal_source: str          # title / audio
+    # vocal_score: float         # 0-100, non-metrical syllabic modulation
+    # vocal_fraction: float      # 0-1, share of the track that scores vocal
+    # vocal_confidence: float    # 0-1; meaningful only when source is audio
 
     lufs: float | None         # EBU R128 integrated loudness
     lra: float | None          # EBU R128 loudness range, LU
@@ -122,7 +138,7 @@ class TrackAnalysis:
             "COMPAS_ARTICULATION": f"{self.articulation:.0f}",
             "COMPAS_TEXTURE": f"{self.percussiveness:.0f}",
             "COMPAS_HARMONY": f"{self.harmonic_variety:.0f}",
-            "COMPAS_VOCAL": self.vocal,
+            # "COMPAS_VOCAL": self.vocal,   # vocal presence disabled
             "COMPAS_STABILITY": f"{self.stability:.0f}",
             "COMPAS_TIMING": self.timing,
             "COMPAS_BPM_RANGE": f"{self.bpm_low:.0f}-{self.bpm_high:.0f}",
@@ -334,9 +350,10 @@ def analyze_file(
     energy = analyze_energy(y, sr, tempo, spec, S=S, onsets=onsets)
     texture = analyze_texture(S, freqs, onsets, sr)
     loud = analyze_loudness(y, sr)
-    voc = analyze_vocal(
-        y, sr, tempo.bpm,
-        instrumental_hint=vocal_hint_from_name(path.name, tags.title))
+    # Vocal presence disabled — see the TrackAnalysis fields for why.
+    # voc = analyze_vocal(
+    #     y, sr, tempo.bpm,
+    #     instrumental_hint=vocal_hint_from_name(path.name, tags.title))
 
     return TrackAnalysis(
         path=str(path),
@@ -367,11 +384,11 @@ def analyze_file(
         articulation=texture.articulation,
         percussiveness=texture.percussiveness,
         harmonic_variety=harmony.harmonic_variety,
-        vocal=voc.vocal,
-        vocal_source=voc.vocal_source,
-        vocal_score=voc.vocal_score,
-        vocal_fraction=voc.vocal_fraction,
-        vocal_confidence=voc.vocal_confidence,
+        # vocal=voc.vocal,                      # vocal presence disabled
+        # vocal_source=voc.vocal_source,
+        # vocal_score=voc.vocal_score,
+        # vocal_fraction=voc.vocal_fraction,
+        # vocal_confidence=voc.vocal_confidence,
         lufs=loud.lufs,
         lra=loud.lra,
         sample_peak_db=loud.sample_peak_db,

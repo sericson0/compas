@@ -27,10 +27,18 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from compas_core.audio import load_audio  # noqa: E402
 from compas_core.vocal import (  # noqa: E402
     ESTRIBILLO_MAX_FRACTION,
     VOCAL_THRESHOLD,
     vocal_hint_from_name,
+)
+
+DISABLED_NOTE = (
+    "Note: vocal presence is currently DISABLED in compas_core/analyze.py, so\n"
+    "library CSVs no longer carry vocal_* columns. Point this script at an\n"
+    "audio folder instead — it calls the detector directly — or re-enable the\n"
+    "feature first (see the note on TrackAnalysis in analyze.py)."
 )
 
 AUDIO_EXTS = {".flac", ".mp3", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".wma"}
@@ -60,20 +68,33 @@ def rows_from_csv(path: Path) -> list[dict]:
 
 
 def rows_from_folder(folder: Path, fast: bool, limit: int | None) -> list[dict]:
-    from compas_core import analyze_file
+    """Score audio directly, without going through analyze_file().
 
-    files = sorted(f for f in folder.rglob("*") if f.suffix.lower() in AUDIO_EXTS)
+    Vocal presence is currently switched off in ``compas_core/analyze.py``,
+    so ``TrackAnalysis`` no longer carries the vocal fields. That is fine
+    here: the detector only needs the audio and a tempo, and calling it
+    straight keeps this script working as the way to evaluate and re-fit it
+    while it is disabled — which is exactly when you need it.
+    """
+    from compas_core.analyze import analyze_file
+    from compas_core.vocal import analyze_vocal
+
+    files = sorted(f for f in folder.rglob("*")
+                   if f.suffix.lower() in AUDIO_EXTS
+                   and not f.name.startswith("._"))
     if limit:
         files = files[:limit]
     out = []
     for i, f in enumerate(files, 1):
         try:
             a = analyze_file(f, fast=fast)
+            y, sr = load_audio(f)
+            v = analyze_vocal(y, sr, a.bpm)
         except Exception as exc:  # noqa: BLE001
             print(f"  [{i}/{len(files)}] ERROR {f.name}: {exc}", file=sys.stderr)
             continue
-        out.append(dict(name=f.name, score=a.vocal_score,
-                        fraction=a.vocal_fraction,
+        out.append(dict(name=f.name, score=v.vocal_score,
+                        fraction=v.vocal_fraction,
                         truth="instr" if vocal_hint_from_name(f.name, a.title)
                         else "vocal"))
         print(f"  [{i}/{len(files)}] {f.name[:56]:<56} "
@@ -112,6 +133,8 @@ def main() -> int:
         return 1
     if not rows:
         print("Nothing to score.", file=sys.stderr)
+        if target.suffix.lower() == ".csv":
+            print(DISABLED_NOTE, file=sys.stderr)
         return 1
 
     inst = [r["score"] for r in rows if r["truth"] == "instr"]
