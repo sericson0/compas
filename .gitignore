@@ -7,3 +7,4 @@ final_results.csv
 build/
 dist/
 example_songs/*
+artifacts/

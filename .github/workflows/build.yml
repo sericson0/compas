@@ -24,7 +24,7 @@ jobs:
             bundle: dist/COMPAS
           - os: macos-latest        # Apple Silicon
             artifact: COMPAS-macos
-            bundle: dist/COMPAS.app
+            bundle: dist/COMPAS-macos.zip
           # No Intel Mac build. llvmlite — pulled in by numba, pulled in by
           # librosa — has published arm64-only macOS wheels since 0.46, so an
           # x86_64 runner falls back to compiling LLVM from source and fails.
@@ -46,6 +46,18 @@ jobs:
 
       - name: Build
         run: python -m PyInstaller packaging/compas.spec --noconfirm
+
+      # upload-artifact zips its input itself, and that zip preserves neither
+      # Unix permissions nor symlinks. Handing it dist/COMPAS.app produced an
+      # unusable download: the .app wrapper was stripped to a bare Contents/
+      # folder, every Qt framework's Versions/Current symlink was replaced by
+      # a full copy (892 MB unpacked, against 363 MB on Windows), and the
+      # executable bit was gone from Contents/MacOS/COMPAS, so nothing would
+      # launch. ditto writes a real bundle archive; the double-zip on download
+      # is the price of keeping the bundle intact.
+      - name: Package the .app so the bundle survives the upload
+        if: runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/COMPAS.app dist/COMPAS-macos.zip
 
       - uses: actions/upload-artifact@v4
         with:
