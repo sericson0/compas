@@ -481,11 +481,26 @@ bash packaging/build_macos.sh      → dist/COMPAS.app          (run on a Mac)
 
 Both use the shared PyInstaller spec `packaging/compas.spec`. The output is a
 folder (`dist\COMPAS\`) — ship the whole folder (zip it); the exe inside won't
-run alone. A Mac app cannot be cross-built from Windows; either run the script
-on a Mac, or push the repo to GitHub and run the **Build executables** workflow
-(`.github/workflows/build.yml`), which builds Windows + macOS (Apple Silicon
-and Intel) and uploads them as downloadable artifacts. Unsigned macOS apps
-need right-click → Open on first launch (or
+run alone.
+
+A Mac app cannot be cross-built from Windows. Either run `build_macos.sh` on a
+Mac, or push and run the **Build executables** workflow
+(`.github/workflows/build.yml`) from the Actions tab, which builds both targets
+and uploads them as artifacts. Two things about that workflow are worth
+knowing:
+
+- **The macOS artifact is a zip inside the artifact zip.** `upload-artifact`
+  makes its own zip, and that zip keeps neither symlinks nor the executable
+  bit — enough to make a `.app` refuse to launch. The workflow therefore runs
+  `ditto` first and uploads the resulting `COMPAS-macos.zip`. Unzip it twice:
+  the inner one holds an intact `COMPAS.app`.
+- **Apple Silicon only.** There is no Intel Mac build. `llvmlite`, pulled in by
+  numba, pulled in by librosa, has published arm64-only macOS wheels since
+  0.46, so an x86_64 runner tries to compile LLVM from source and fails. Intel
+  Macs can still build locally with `packaging/build_macos.sh` if the toolchain
+  is present.
+
+Unsigned macOS apps need right-click → Open on first launch (or
 `xattr -dr com.apple.quarantine COMPAS.app`).
 
 ### VirtualDJ integration (works today, no plugin needed)
