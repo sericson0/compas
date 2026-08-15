@@ -14,6 +14,7 @@ from pathlib import Path
 
 from PySide6.QtCore import (
     QElapsedTimer,
+    QEvent,
     QRect,
     QSettings,
     Qt,
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
+    QMenuBar,
     QMessageBox,
     QProgressBar,
     QProgressDialog,
@@ -53,7 +55,7 @@ from PySide6.QtWidgets import (
 )
 
 from compas_core import facets
-from compas_gui import session, theme
+from compas_gui import session, theme, titlebar
 from compas_gui.model import (
     COLUMN_TOOLTIPS,
     TrackRow,
@@ -507,6 +509,64 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.progress_bar)
 
         self._build_menu_bar(act_files, act_folder)
+        self._install_titlebar()
+
+    def _install_titlebar(self) -> None:
+        """Merge the menu bar into the window's own title strip.
+
+        Skipped on macOS, where the menus already live in the system menu bar
+        and the window frame is not ours to replace.
+        """
+        if not titlebar.use_custom_titlebar():
+            return
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.title_bar = titlebar.TitleBar(self, self._menu_bar)
+        self.setMenuWidget(self.title_bar)
+        # The margin is the resize band. Without it the band would sit over the
+        # table's scrollbar, and grabbing the scrollbar would resize the window.
+        self.setContentsMargins(*(titlebar.RESIZE_MARGIN,) * 4)
+        self.setMouseTracking(True)
+        self._resize_edges = Qt.Edges()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if (event.type() == QEvent.WindowStateChange
+                and getattr(self, "title_bar", None) is not None):
+            maximized = self.isMaximized()
+            self.title_bar.sync_maximized(maximized)
+            # A maximised window has no outside to grab, and keeping the
+            # margin would leave a dead band against the screen edge.
+            margin = 0 if maximized else titlebar.RESIZE_MARGIN
+            self.setContentsMargins(*(margin,) * 4)
+
+    # --- frameless resizing ---------------------------------------------------
+    def mouseMoveEvent(self, event) -> None:
+        if getattr(self, "title_bar", None) is not None:
+            edges = titlebar.edges_at(self, event.position().toPoint())
+            cursor = titlebar.cursor_for(edges)
+            if cursor is None:
+                self.unsetCursor()
+            else:
+                self.setCursor(cursor)
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event) -> None:
+        if (getattr(self, "title_bar", None) is not None
+                and event.button() == Qt.LeftButton):
+            edges = titlebar.edges_at(self, event.position().toPoint())
+            handle = self.windowHandle()
+            if edges and handle is not None:
+                # The OS runs the resize loop, so it behaves like any other
+                # window — including snapping and live layout.
+                handle.startSystemResize(edges)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if getattr(self, "title_bar", None) is not None:
+            self.unsetCursor()
+        super().leaveEvent(event)
 
     def _build_menu_bar(self, act_files, act_folder) -> None:
         """Everything reachable from the keyboard, and nothing that can be
@@ -518,7 +578,11 @@ class MainWindow(QMainWindow):
         Facets — the two menus this app is built around — spent their life
         collapsed behind an unlabelled overflow chevron.
         """
-        bar = self.menuBar()
+        # Built by hand rather than via self.menuBar(): on Windows and Linux
+        # it is re-parented into the title bar, and calling menuBar() would
+        # create a second, empty one in the row this is meant to reclaim.
+        bar = QMenuBar(self) if titlebar.use_custom_titlebar() else self.menuBar()
+        self._menu_bar = bar
 
         file_menu = bar.addMenu("&File")
         act_files.setShortcut(QKeySequence.Open)

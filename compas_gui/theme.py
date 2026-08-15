@@ -319,6 +319,55 @@ QProgressBar::chunk {{
     border-radius: 3px;
 }}
 
+/* A frameless window has no OS border, so it needs its own outline or it
+   bleeds into whatever is behind it. This band is also the resize target. */
+QMainWindow {{
+    background: {BACKGROUND};
+    border: 1px solid {RULE};
+}}
+
+/* The custom title strip: menus, window name and window buttons in one row.
+   Windows and Linux only — see compas_gui/titlebar.py. */
+QWidget#TitleBar {{
+    background: {PANEL_BACKGROUND};
+    border-bottom: 1px solid {RULE};
+}}
+QLabel#TitleText {{
+    color: {LABEL_TEXT};
+    font-weight: 600;
+}}
+QMenuBar#TitleMenuBar {{
+    background: transparent;
+    border: none;
+    padding: 0px;
+}}
+/* Square, full-height and flush to the corner, the way a window button is
+   expected to behave — not the rounded, padded QToolButton the toolbar uses. */
+QToolButton#WinMin, QToolButton#WinMax, QToolButton#WinClose {{
+    background: transparent;
+    color: {TEXT_NORMAL};
+    border: none;
+    border-radius: 0px;
+    padding: 0px;
+    font-size: 12px;
+    font-weight: normal;
+}}
+QToolButton#WinMin:hover, QToolButton#WinMax:hover {{
+    background: {BUTTON_BG_HOVER};
+    color: {TEXT_BRIGHT};
+}}
+QToolButton#WinMin:pressed, QToolButton#WinMax:pressed {{
+    background: {BUTTON_BG};
+}}
+QToolButton#WinClose:hover {{
+    background: #c42b1c;
+    color: #ffffff;
+}}
+QToolButton#WinClose:pressed {{
+    background: #8e1f14;
+    color: #ffffff;
+}}
+
 QMenuBar {{
     background: {BACKGROUND};
     color: {TEXT_NORMAL};

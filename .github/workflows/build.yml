@@ -12,6 +12,11 @@ on:
 jobs:
   build:
     strategy:
+      # One dead target must not cancel the healthy ones. Without this, the
+      # Intel Mac job failing during pip install cancelled the Windows and
+      # Apple Silicon builds a minute in, so a run that should have produced
+      # two artifacts produced none.
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -20,9 +25,12 @@ jobs:
           - os: macos-latest        # Apple Silicon
             artifact: COMPAS-macos
             bundle: dist/COMPAS.app
-          - os: macos-15-intel      # Intel Macs
-            artifact: COMPAS-macos-intel
-            bundle: dist/COMPAS.app
+          # No Intel Mac build. llvmlite — pulled in by numba, pulled in by
+          # librosa — has published arm64-only macOS wheels since 0.46, so an
+          # x86_64 runner falls back to compiling LLVM from source and fails.
+          # Pinning llvmlite<0.46 would work but freezes that build's whole
+          # numba/librosa stack. Intel Macs can still be built from source on
+          # the machine itself with packaging/build_macos.sh.
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
