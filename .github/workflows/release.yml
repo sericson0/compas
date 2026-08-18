@@ -1,0 +1,264 @@
+name: Release
+
+# Builds the Windows folder-app and the macOS .app with PyInstaller, then
+# publishes both as assets on a public GitHub Release — anyone can download
+# them without a GitHub account, and they never expire (unlike the Actions
+# artifacts this workflow replaced).
+#
+# Triggers:
+#   * pushing a v* tag        → builds that tag and publishes the release
+#   * Actions → Run workflow  → with a tag, rebuilds and replaces that
+#                               release's assets (use this after adding the
+#                               macOS signing secrets); without a tag, a dry
+#                               run that only uploads Actions artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to rebuild and re-attach assets to. Blank = dry run, no release touched."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One dead target must not cancel the healthy ones. Without this, the
+      # Intel Mac job failing during pip install cancelled the Windows and
+      # Apple Silicon builds a minute in, so a run that should have produced
+      # two artifacts produced none.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            slug: windows-x64
+          - os: macos-latest        # Apple Silicon
+            slug: macos-arm64
+          # No Intel Mac build. llvmlite — pulled in by numba, pulled in by
+          # librosa — has published arm64-only macOS wheels since 0.46, so an
+          # x86_64 runner falls back to compiling LLVM from source and fails.
+          # Pinning llvmlite<0.46 would work but freezes that build's whole
+          # numba/librosa stack. Intel Macs can still be built from source on
+          # the machine itself with packaging/build_macos.sh.
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          case "$REF" in
+            v*) VERSION="${REF#v}" ;;
+            *)  VERSION="0.0.0-dev+${GITHUB_SHA:0:7}" ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building COMPAS $VERSION"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+
+      # ---------------------------------------------------------------- macOS
+      # Signing is optional so the workflow still produces a working build
+      # before the Developer ID secrets exist. Unsigned, PyInstaller leaves an
+      # ad-hoc signature that runs on Apple Silicon but trips Gatekeeper on
+      # download; signed + notarized, the app opens with a double-click.
+      - name: Check for macOS signing secrets
+        id: signing
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          CERT: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+        run: |
+          if [ -n "$CERT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Developer ID secrets present — will sign and notarize."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No MACOS_CERTIFICATE_P12 secret. Building an unsigned app; users will need right-click → Open."
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          # Without this, codesign blocks on a GUI "allow access" prompt that
+          # no one is there to click, and the job hangs until it times out.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      # ---------------------------------------------------------------- build
+      - name: Build
+        shell: bash
+        env:
+          COMPAS_VERSION: ${{ steps.version.outputs.version }}
+          COMPAS_CODESIGN_IDENTITY: ${{ steps.signing.outputs.enabled == 'true' && secrets.MACOS_SIGNING_IDENTITY || '' }}
+          # PyInstaller's BUNDLE step downgrades a codesign failure to a log
+          # warning and carries on, so a bad certificate would produce an
+          # unsigned .app and a build that "succeeded". These make it fatal,
+          # and only when we actually expect signing to happen — the unsigned
+          # fallback path relies on the lenient default.
+          PYINSTALLER_STRICT_BUNDLE_CODESIGN_ERROR: ${{ steps.signing.outputs.enabled == 'true' && '1' || '0' }}
+          PYINSTALLER_VERIFY_BUNDLE_SIGNATURE: ${{ steps.signing.outputs.enabled == 'true' && '1' || '0' }}
+        run: python -m PyInstaller packaging/compas.spec --noconfirm
+
+      - name: Verify the signature
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          codesign --verify --deep --strict --verbose=2 dist/COMPAS.app
+          codesign --display --entitlements - dist/COMPAS.app
+
+      # ditto, not zip: a plain zip preserves neither the Unix permission bits
+      # nor the Versions/Current symlinks inside each Qt framework. Handing
+      # upload-artifact the raw .app produced an unusable download — the
+      # bundle flattened to a bare Contents/ folder, every framework symlink
+      # became a full copy (892 MB unpacked, against 363 MB on Windows), and
+      # Contents/MacOS/COMPAS lost its executable bit, so nothing launched.
+      - name: Archive the .app
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            dist/COMPAS.app "dist/COMPAS-${{ steps.version.outputs.version }}-macos-arm64.zip"
+
+      - name: Notarize and staple
+        if: steps.signing.outputs.enabled == 'true'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ZIP: dist/COMPAS-${{ steps.version.outputs.version }}-macos-arm64.zip
+        run: |
+          set -euo pipefail
+          # --wait blocks until Apple returns a verdict (usually 1-5 min).
+          # On rejection, dump the log — the summary alone never says which
+          # binary or which missing entitlement caused it.
+          if ! xcrun notarytool submit "$ZIP" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait --timeout 30m; then
+            echo "::error::Notarization failed. Recent submissions:"
+            xcrun notarytool history --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" | head -40
+            exit 1
+          fi
+
+          # Staple the ticket into the bundle so Gatekeeper clears the app
+          # offline, then re-archive — the zip we submitted predates the
+          # ticket and would still make first launch hit the network.
+          xcrun stapler staple dist/COMPAS.app
+          xcrun stapler validate dist/COMPAS.app
+          rm -f "$ZIP"
+          ditto -c -k --sequesterRsrc --keepParent dist/COMPAS.app "$ZIP"
+
+          # The verdict a user's Mac will reach on a fresh download.
+          spctl --assess --type exec --verbose=4 dist/COMPAS.app
+
+      # -------------------------------------------------------------- Windows
+      - name: Archive the Windows folder
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/COMPAS -DestinationPath "dist/COMPAS-${{ steps.version.outputs.version }}-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: COMPAS-${{ matrix.slug }}
+          path: dist/COMPAS-*-${{ matrix.slug }}.zip
+          if-no-files-found: error
+
+  # Publishes only for a real tag. A blank-input manual run stops after build,
+  # leaving the Actions artifacts to inspect without touching any release.
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          ls -lh assets/
+
+          cat > notes.md <<EOF
+          COMPAS $VERSION — standalone builds. No Python install needed.
+
+          ## Download
+
+          | Platform | File |
+          | --- | --- |
+          | Windows 10/11 (64-bit) | \`COMPAS-$VERSION-windows-x64.zip\` |
+          | macOS 11+ (Apple Silicon) | \`COMPAS-$VERSION-macos-arm64.zip\` |
+
+          **Windows** — unzip anywhere, run \`COMPAS\\COMPAS.exe\`. Keep the whole
+          folder together; the .exe will not run on its own. The build is
+          unsigned, so SmartScreen shows a blue "Windows protected your PC"
+          box on first launch: click **More info → Run anyway**.
+
+          **macOS** — unzip and drag \`COMPAS.app\` to Applications. If the app
+          is signed and notarized it opens with a double-click; if you get
+          *"COMPAS is damaged"* or *"cannot be opened"*, this build was
+          unsigned — right-click the app → **Open** → **Open**, or run
+          \`xattr -dr com.apple.quarantine /Applications/COMPAS.app\`.
+
+          There is no Intel Mac build — one dependency (llvmlite, via numba, via
+          librosa) ships arm64-only wheels. Intel Macs can build from source:
+          see [BUILDING.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/BUILDING.md).
+
+          ## Build it yourself
+
+          Any platform, from source — see
+          [BUILDING.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/BUILDING.md).
+          EOF
+
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists — replacing its assets."
+            gh release edit "$TAG" --notes-file notes.md --title "COMPAS $VERSION"
+          else
+            gh release create "$TAG" --title "COMPAS $VERSION" --notes-file notes.md
+          fi
+
+          gh release upload "$TAG" assets/*.zip --clobber
+          gh release view "$TAG" --json url --jq .url

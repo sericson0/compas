@@ -474,33 +474,44 @@ C:\Users\seric\.venvs\compas\Scripts\python -m compas_gui
 
 ### Standalone executables (no Python needed)
 
+Prebuilt, on the [Releases page](https://github.com/sericson0/compas/releases):
+
+```
+COMPAS-<version>-windows-x64.zip     Windows 10/11 — unzip, run COMPAS\COMPAS.exe
+COMPAS-<version>-macos-arm64.zip     macOS 11+, Apple Silicon — unzip, drag to Applications
+```
+
+Ship or move the *whole* Windows folder; `COMPAS.exe` won't run on its own. The
+Windows build is unsigned, so SmartScreen asks for a **More info → Run anyway**
+on first launch.
+
+To build one yourself — any platform, including Intel Macs and Linux, which
+have no published build — see [BUILDING.md](BUILDING.md):
+
 ```
 packaging\build_windows.bat        → dist\COMPAS\COMPAS.exe   (run on Windows)
 bash packaging/build_macos.sh      → dist/COMPAS.app          (run on a Mac)
 ```
 
-Both use the shared PyInstaller spec `packaging/compas.spec`. The output is a
-folder (`dist\COMPAS\`) — ship the whole folder (zip it); the exe inside won't
-run alone.
+Both use the shared PyInstaller spec `packaging/compas.spec`. PyInstaller
+freezes the interpreter it runs under, so there is no cross-building: a Mac app
+needs a Mac. Tagging `v*` runs [the release workflow](.github/workflows/release.yml)
+on GitHub's runners, which have both. Two things about it are worth knowing:
 
-A Mac app cannot be cross-built from Windows. Either run `build_macos.sh` on a
-Mac, or push and run the **Build executables** workflow
-(`.github/workflows/build.yml`) from the Actions tab, which builds both targets
-and uploads them as artifacts. Two things about that workflow are worth
-knowing:
+- **The macOS asset is a `ditto` archive, not a plain zip.** A plain zip keeps
+  neither symlinks nor the executable bit — enough to make a `.app` refuse to
+  launch. It flattened the bundle to a bare `Contents/` folder and turned every
+  Qt framework symlink into a full copy (892 MB unpacked, against 363 MB on
+  Windows).
+- **Apple Silicon only.** `llvmlite`, pulled in by numba, pulled in by librosa,
+  has published arm64-only macOS wheels since 0.46, so an x86_64 runner tries
+  to compile LLVM from source and fails. Intel Macs can still build locally —
+  [BUILDING.md](BUILDING.md#intel-macs) has the workaround.
 
-- **The macOS artifact is a zip inside the artifact zip.** `upload-artifact`
-  makes its own zip, and that zip keeps neither symlinks nor the executable
-  bit — enough to make a `.app` refuse to launch. The workflow therefore runs
-  `ditto` first and uploads the resulting `COMPAS-macos.zip`. Unzip it twice:
-  the inner one holds an intact `COMPAS.app`.
-- **Apple Silicon only.** There is no Intel Mac build. `llvmlite`, pulled in by
-  numba, pulled in by librosa, has published arm64-only macOS wheels since
-  0.46, so an x86_64 runner tries to compile LLVM from source and fails. Intel
-  Macs can still build locally with `packaging/build_macos.sh` if the toolchain
-  is present.
-
-Unsigned macOS apps need right-click → Open on first launch (or
+Cutting a release, and the full walkthrough for signing and notarizing the Mac
+app so it opens without a Gatekeeper warning, are in
+[RELEASING.md](RELEASING.md). A locally built, unsigned Mac app needs
+right-click → Open on first launch (or
 `xattr -dr com.apple.quarantine COMPAS.app`).
 
 ### VirtualDJ integration (works today, no plugin needed)

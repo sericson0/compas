@@ -1,0 +1,17 @@
+# Shell scripts must reach macOS/Linux with LF endings — bash treats a
+# trailing \r as part of the command and fails with "$'\r': command not
+# found". The repo is developed on Windows, so without this, a core.autocrlf
+# setting that writes CRLF into the index would ship a broken build script.
+*.sh            text eol=lf
+*.plist         text eol=lf
+*.yml           text eol=lf
+*.spec          text eol=lf
+
+# Batch files are the mirror case: cmd.exe wants CRLF.
+*.bat           text eol=crlf
+
+# Never let the audio fixtures be touched by line-ending conversion.
+*.flac          binary
+*.mp3           binary
+*.m4a           binary
+*.wav           binary
